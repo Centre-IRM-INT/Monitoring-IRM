@@ -1,0 +1,349 @@
+/* ============================================================
+   style.css — Feuille de style commune
+   Supervision IRM — Plateforme INT / CNRS
+   Utilisée par toutes les pages HTML du dashboard distant.
+   ============================================================ */
+
+/* ── Variables CSS globales ──────────────────────────────────
+   Définies sur :root pour être accessibles partout dans le CSS.
+   Modifier ces valeurs change l'apparence sur toutes les pages. */
+:root {
+    --sidebar-width: 292px;   /* Largeur de la sidebar sur desktop */
+    --bg:        #f4f7fb;     /* Fond de page général */
+    --surface:   #ffffff;     /* Fond des cartes et topbar */
+    --surface-2: #f8fafc;     /* Fond secondaire (inputs, stats) */
+    --text:      #1f2937;     /* Couleur texte principale */
+    --muted:     #64748b;     /* Texte secondaire / sous-titres */
+    --border:    #e2e8f0;     /* Bordures légères */
+    --sidebar:   #24272c;     /* Couleur haut du dégradé sidebar */
+    --sidebar-2: #2f3338;     /* Couleur bas du dégradé sidebar */
+    --accent:    #58c63b;     /* Vert accent — lien actif, dot actif */
+    --green:     #22c55e;     /* Vert statut ON */
+    --red:       #ef4444;     /* Rouge statut OFF / alerte */
+    --orange:    #f97316;     /* Orange — cartes alertes */
+}
+
+/* ── Reset minimal ───────────────────────────────────────────
+   Inclut le padding et la bordure dans le calcul de la largeur.
+   Évite les débordements inattendus sur les éléments à largeur fixe. */
+* { box-sizing: border-box; }
+
+/* Empêche iOS de grossir automatiquement le texte en mode paysage */
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+    margin: 0;
+    /* Pile de polices : Inter chargée via Google Fonts, fallback système */
+    font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+}
+
+/* Supprime la décoration des liens — la couleur est héritée du parent */
+a { color: inherit; text-decoration: none; }
+
+/* ── Structure principale ────────────────────────────────────
+   Conteneur flex qui place la sidebar à gauche et le contenu à droite.
+   min-height: 100vh garantit que la sidebar remplit toute la hauteur. */
+.app-shell {
+    min-height: 100vh;
+    display: flex;
+}
+
+/* ============================================================
+   SIDEBAR
+   ============================================================ */
+
+.sidebar {
+    width: var(--sidebar-width);
+    min-height: 100vh;
+    /* Dégradé vertical du haut vers le bas entre les deux teintes sombre */
+    background: linear-gradient(180deg, var(--sidebar), var(--sidebar-2));
+    color: #f8fafc;
+    padding: 22px 16px;
+    position: fixed;   /* Reste en place pendant le scroll du contenu */
+    left: 0;
+    top: 0;
+    bottom: 0;
+    transition: transform 0.25s ease;
+    z-index: 1000;     /* Au-dessus du contenu, sous le bouton hamburger (1100) */
+}
+
+/* Sidebar rétractée sur desktop — translateX vers la gauche hors écran */
+.sidebar.closed {
+    transform: translateX(calc(-1 * var(--sidebar-width)));
+}
+
+/* En-tête de la sidebar : logo texte + image logo IRM */
+.sidebar-brand {
+    height: 70px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 0 8px 18px 8px;
+    border-bottom: 1px solid rgba(255,255,255,0.12); /* Séparateur subtil */
+    margin-bottom: 22px;
+}
+
+.sidebar-brand span { font-size: 1.28rem; font-weight: 700; line-height: 1.15; }
+.sidebar-brand img  { height: 46px; width: auto; object-fit: contain; }
+
+/* Groupe de liens (Monitoring / Système) */
+.sidebar-section { margin-bottom: 26px; }
+
+/* Titre de section en majuscules espacées */
+.sidebar-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    color: #cbd5e1;
+    font-size: 0.82rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding: 0 10px;
+    margin-bottom: 10px;
+}
+
+/* Grille des liens de navigation */
+.sidebar-menu { display: grid; gap: 7px; }
+
+.sidebar-menu a {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    padding: 12px 12px;
+    border-radius: 12px;
+    color: #e2e8f0;
+    font-weight: 600;
+    transition: background 0.2s ease, color 0.2s ease;
+}
+
+.sidebar-menu a:hover  { background: rgba(255,255,255,0.08); }
+
+/* Lien de la page courante — fond vert translucide + texte blanc */
+.sidebar-menu a.active {
+    background: rgba(88,198,59,0.18);
+    color: #ffffff;
+}
+
+/* Petit cercle coloré devant chaque lien */
+.dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: #94a3b8;
+    flex: 0 0 auto; /* Ne rétrécit pas si le texte est long */
+}
+
+/* Dot actif — vert accent avec halo lumineux */
+.sidebar-menu a.active .dot {
+    background: var(--accent);
+    box-shadow: 0 0 12px rgba(88,198,59,0.75);
+}
+
+/* Empêche le texte des liens de passer à la ligne */
+.label-text { white-space: nowrap; }
+
+/* Pied de sidebar — identification de la plateforme */
+.sidebar-footer {
+    position: absolute;
+    bottom: 22px;
+    left: 16px;
+    right: 16px;
+    color: #cbd5e1;
+    font-size: 0.86rem;
+    line-height: 1.5;
+    padding: 14px;
+    border-radius: 14px;
+    background: rgba(255,255,255,0.06); /* Fond légèrement plus clair que la sidebar */
+}
+
+/* ============================================================
+   CONTENU PRINCIPAL
+   ============================================================ */
+
+.main-content {
+    /* Décalé vers la droite de la largeur de la sidebar */
+    margin-left: var(--sidebar-width);
+    width: calc(100% - var(--sidebar-width));
+    min-height: 100vh;
+    padding: 34px;
+    /* Transition fluide lors de la rétraction de la sidebar */
+    transition: margin-left 0.25s ease, width 0.25s ease;
+}
+
+/* Quand la sidebar est fermée (desktop), le contenu prend toute la largeur */
+.main-content.full { margin-left: 0; width: 100%; }
+
+/* Barre supérieure : titre de page + badges */
+.topbar {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 24px;
+    padding: 26px 30px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    box-shadow: 0 12px 35px rgba(15,23,42,0.06);
+    margin-bottom: 28px;
+}
+
+.page-title    { margin: 0; font-size: 1.9rem; color: var(--text); }
+.page-subtitle { margin-top: 7px; color: var(--muted); font-size: 1rem; }
+
+.topbar-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+/* Badge pill vert — utilisé pour "Supabase REST" et "Lecture seule" */
+.badge-soft {
+    padding: 9px 13px;
+    border-radius: 999px;  /* Pill shape */
+    background: #ecfdf5;
+    color: #166534;
+    font-size: 0.88rem;
+    font-weight: 700;
+}
+
+/* ── Bouton hamburger ────────────────────────────────────────
+   Visible sur tous les écrans (desktop et mobile).
+   Sur desktop : rétracte/étend la sidebar.
+   Sur mobile  : ouvre la sidebar en overlay. */
+.menu-toggle {
+    position: fixed;
+    top: 18px;
+    left: 18px;
+    z-index: 1100; /* Au-dessus de la sidebar (1000) et de l'overlay (900) */
+    width: 44px;
+    height: 44px;
+    border: none;
+    border-radius: 12px;
+    background: #ffffff;
+    color: #1e293b;
+    font-size: 1.4rem;
+    cursor: pointer;
+    box-shadow: 0 10px 30px rgba(15,23,42,0.16);
+}
+
+/* Overlay — caché par défaut, affiché uniquement sur mobile quand la sidebar est ouverte */
+#overlay { display: none; }
+
+/* ============================================================
+   CARTES
+   ============================================================ */
+
+/* Grille à une colonne par défaut — élargie selon les pages via CSS inline */
+.container { display: grid; grid-template-columns: 1fr; gap: 24px; }
+
+.card {
+    position: relative;  /* Nécessaire pour les badges positionnés en absolu */
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 24px;
+    padding: 28px;
+    box-shadow: 0 12px 35px rgba(15,23,42,0.07);
+    min-width: 0; /* Empêche le débordement dans une grille flex/grid */
+}
+
+.card h2    { margin: 0 0 18px 0; color: var(--text); font-size: 1.25rem; }
+
+/* Valeur principale affichée en grand (température, amplitude…) */
+.value      { font-size: 2.2rem; font-weight: 700; color: var(--text); margin: 10px 0; }
+
+/* Horodatage de la dernière mesure */
+.timestamp  { color: var(--muted); font-size: 0.92rem; }
+
+canvas      { margin-top: 20px; }
+
+/* ============================================================
+   RESPONSIVE
+   ============================================================ */
+
+/* Tablette — grille de cartes revient à une colonne */
+@media (max-width: 1100px) {
+    .container { grid-template-columns: 1fr; }
+}
+
+/* Mobile (≤ 720px) */
+@media (max-width: 720px) {
+    /* Sidebar cachée hors écran par défaut */
+    .sidebar { transform: translateX(-100%); }
+
+    /* Sidebar visible quand la classe "active" est ajoutée par toggleMenu() */
+    .sidebar.active { transform: translateX(0); }
+
+    /* Le contenu prend toute la largeur (pas de marge pour la sidebar) */
+    .main-content {
+        margin-left: 0;
+        width: 100%;
+        /* padding-top plus grand pour ne pas être masqué par le bouton hamburger */
+        padding: 84px 18px 24px 18px;
+    }
+
+    /* Topbar en colonne sur mobile */
+    .topbar {
+        flex-direction: column;
+        align-items: flex-start;
+        padding: 22px;
+    }
+
+    .page-title { font-size: 1.55rem; }
+    .card       { padding: 22px; }
+
+    /* Overlay affiché derrière la sidebar — clic dessus pour fermer */
+    #overlay.active {
+        display: block;
+        position: fixed;
+        inset: 0;
+        background: rgba(15,23,42,0.45);
+        z-index: 900; /* Sous la sidebar (1000) mais au-dessus du contenu */
+    }
+}
+
+/* ============================================================
+   PAGE D'ACCUEIL (index.html) — Grille des modules
+   ============================================================ */
+
+/* Grille 2 colonnes pour les 4 cartes modules */
+.dashboard-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 24px;
+}
+
+/* Carte module — lien cliquable vers la page de détail */
+.module-card {
+    min-height: 210px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    color: var(--text);
+    transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+/* Effet de survol — légère élévation */
+.module-card:hover {
+    transform: translateY(-6px);
+    box-shadow: 0 18px 45px rgba(15,23,42,0.12);
+}
+
+.module-card .label  { color: var(--muted); font-size: 0.95rem; font-weight: 700; margin-bottom: 10px; }
+.module-card .metric { font-size: 2.3rem; font-weight: 800; color: var(--text); margin-bottom: 8px; }
+.module-card p       { margin: 0; color: var(--muted); font-size: 1rem; line-height: 1.45; }
+
+/* Bouton "View details" en bas de chaque carte module */
+.module-card .open {
+    margin-top: 28px;
+    color: #166534;
+    background: #ecfdf5;
+    width: fit-content;
+    padding: 8px 12px;
+    border-radius: 999px;
+    font-size: 0.9rem;
+    font-weight: 700;
+}
+
+/* Sur petits écrans, les cartes modules passent en colonne unique */
+@media (max-width: 900px) {
+    .dashboard-grid { grid-template-columns: 1fr; }
+}

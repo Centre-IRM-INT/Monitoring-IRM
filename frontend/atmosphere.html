@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Données atmosphériques</title>
+
+<!-- Police Inter via Google Fonts — commune à toutes les pages -->
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+
+<!-- Feuille de style commune à toutes les pages du dashboard -->
+<link rel="stylesheet" href="style.css?v=final">
+
+<!-- Chart.js — bibliothèque de tracé de graphiques -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<!-- Hammer.js — gestion des gestes tactiles (requis par chartjs-plugin-zoom) -->
+<script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8"></script>
+
+<!-- Plugin zoom/pan pour Chart.js — zoom boutons + pan au clic maintenu -->
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1"></script>
+
+<style>
+/* Positionnement relatif pour le badge de statut en absolu */
+.card { position: relative; }
+
+/* Badge ● de fraîcheur positionné en haut à droite de la carte -->
+.status-badge {
+    position: absolute;
+    top: 20px;
+    right: 25px;
+    font-size: 1.4rem;
+}
+
+canvas { margin-top: 20px; }
+
+/* Barre de contrôles : sélecteur de plage + boutons zoom (température uniquement) -->
+.chart-controls {
+    margin-top: 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+.chart-controls label { color: var(--text); font-weight: 600; }
+.chart-controls select,
+.chart-controls button {
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    color: var(--text);
+    font-size: 0.95rem;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+.chart-controls button:hover,
+.chart-controls select:hover { background: var(--border); }
+
+.info-note { margin-top: 8px; color: #94a3b8; font-size: 0.92rem; }
+</style>
+</head>
+
+<body>
+
+<!-- Bouton pour ouvrir/fermer la sidebar.
+     Sur mobile (≤ 720px) : overlay. Sur desktop : rétractable. -->
+<button class="menu-toggle" type="button" aria-label="Ouvrir le menu" onclick="toggleMenu()">☰</button>
+
+<!-- Fond semi-transparent derrière la sidebar sur mobile -->
+<div id="overlay" onclick="closeMenu()"></div>
+
+<div class="app-shell">
+
+    <!-- ─────────────────────────────────────────────
+         SIDEBAR — Navigation latérale
+    ──────────────────────────────────────────────── -->
+    <aside id="sidebar" class="sidebar">
+        <div class="sidebar-brand">
+            <span>IRM Supervision</span>
+            <img src="Logo_IRM.png" alt="Logo IRM">
+        </div>
+
+        <div class="sidebar-section">
+            <div class="sidebar-title"><span>Monitoring</span><span>⌄</span></div>
+            <nav class="sidebar-menu">
+                <!-- data-page identifie la page courante pour le JS (classe "active") -->
+                <a href="index.html"       data-page="index">      <span class="dot"></span><span class="label-text">Vue générale</span></a>
+                <a href="atmosphere.html"  data-page="atmosphere"> <span class="dot"></span><span class="label-text">Atmosphère</span></a>
+                <a href="eaufroide.html"   data-page="eaufroide">  <span class="dot"></span><span class="label-text">Eau glacée</span></a>
+                <a href="compresseur.html" data-page="compresseur"><span class="dot"></span><span class="label-text">Compresseur</span></a>
+                <a href="groupefroid.html" data-page="groupefroid"><span class="dot"></span><span class="label-text">Groupe froid</span></a>
+            </nav>
+        </div>
+
+        <div class="sidebar-section">
+            <div class="sidebar-title"><span>Système</span><span>⌄</span></div>
+            <nav class="sidebar-menu">
+                <a href="alerte.html"      data-page="alerte">     <span class="dot"></span><span class="label-text">Alertes</span></a>
+                <a href="datalogging.html" data-page="datalogging"><span class="dot"></span><span class="label-text">Datalogging</span></a>
+            </nav>
+        </div>
+
+        <div class="sidebar-footer">Plateforme IRM – INT<br>Consultation distante</div>
+    </aside>
+
+    <!-- ─────────────────────────────────────────────
+         CONTENU PRINCIPAL
+    ──────────────────────────────────────────────── -->
+    <main class="main-content">
+
+        <div class="topbar">
+            <div>
+                <h1 class="page-title">Données atmosphériques</h1>
+                <div class="page-subtitle">Température, humidité et pression de la salle IRM</div>
+            </div>
+            <!-- Rappel : interface lecture seule, données lues via Supabase REST -->
+            <div class="topbar-actions">
+                <span class="badge-soft">Supabase REST</span>
+                <span class="badge-soft">Lecture seule</span>
+            </div>
+        </div>
+
+        <div class="container">
+
+            <!-- Carte atmosphérique — arduino_atmo
+                 Affiche les 3 grandeurs courantes (temp, humidité, pression)
+                 et 3 graphiques historiques :
+                 - Température : plage configurable (24h à 4j) + zoom
+                 - Humidité    : toujours sur 24h, sans zoom (fixe)
+                 - Pression    : toujours sur 24h, sans zoom (fixe) -->
+            <div class="card">
+                <h2>Arduino Atmo</h2>
+
+                <!-- Badge ● coloré : vert si mesure < 2 min, rouge sinon -->
+                <div id="atmo_status" class="status-badge">●</div>
+
+                <!-- Valeurs courantes des 3 grandeurs -->
+                <div class="value" id="atmo_temp">Température : --</div>
+                <div class="value" id="atmo_hum">Humidité : --</div>
+                <div class="value" id="atmo_press">Pression : --</div>
+                <div class="timestamp" id="atmo_time"></div>
+
+                <!-- Contrôles du graphique température uniquement.
+                     Humidité et pression sont fixées à 24h sans zoom. -->
+                <div class="chart-controls">
+                    <label for="temp_range_select">Plage température :</label>
+                    <select id="temp_range_select">
+                        <option value="24">24 h</option>
+                        <option value="48">48 h</option>
+                        <option value="72">3 jours</option>
+                        <option value="96">4 jours</option>
+                    </select>
+                    <button onclick="zoomIn()">Zoom X +</button>
+                    <button onclick="zoomOut()">Zoom X -</button>
+                    <button onclick="zoomYIn()">Zoom Y +</button>
+                    <button onclick="zoomYOut()">Zoom Y -</button>
+                    <button onclick="resetZoom()">Réinitialiser zoom</button>
+                </div>
+                <div class="info-note">Clic maintenu + déplacement = navigation dans le graphe température</div>
+
+                <!-- Canvas température — plage configurable, zoom activé -->
+                <canvas id="atmo_chart" height="120"></canvas>
+
+                <!-- Canvas humidité — fixe 24h, pas de zoom -->
+                <canvas id="atmo_hum_chart" height="120"></canvas>
+
+                <!-- Canvas pression — fixe 24h, pas de zoom -->
+                <canvas id="atmo_press_chart" height="120"></canvas>
+            </div>
+
+        </div>
+    </main>
+</div>
+
+<!-- Marque le lien "Atmosphère" comme actif dans la sidebar -->
+<script>document.querySelector('[data-page="atmosphere"]').classList.add('active');</script>
+
+<script>
+    // ── Connexion Supabase ────────────────────────────────────────────
+    // Clé publique (publishable) — lecture seule, sans risque d'exposition.
+    const SUPABASE_URL = "https://xkqizqpflgcmyiqluuie.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_87i8-j5iiLISsoBSBvC7ng_RlE5TPrr";
+
+    // Instances Chart.js — une par grandeur physique
+    let atmoChart;      // température — plage configurable, zoom activé
+    let atmoHumChart;   // humidité   — fixe 24h
+    let atmoPressChart; // pression   — fixe 24h
+
+    // Plage temporelle sélectionnée pour la température (en heures)
+    let currentTempRangeHours = 24;
+
+    // Données brutes actuellement affichées dans le graphique température
+    // Conservées pour recalculer les bornes Y après un resetZoom
+    let currentTempData = [];
+
+    /**
+     * formatLocalTime(utcString)
+     * Convertit un timestamp UTC (Supabase) en heure locale française (AAAA-MM-JJ à HH:MM).
+     */
+    function formatLocalTime(utcString) {
+        const date  = new Date(utcString);
+        const parts = new Intl.DateTimeFormat("fr-FR", {
+            timeZone: "Europe/Paris",
+            year: "numeric", month: "2-digit", day: "2-digit",
+            hour: "2-digit", minute: "2-digit", hour12: false
+        }).formatToParts(date);
+
+        const get = type => parts.find(p => p.type === type).value;
+        return `${get("year")}-${get("month")}-${get("day")} à ${get("hour")}:${get("minute")}`;
+    }
+
+    /**
+     * updateStatus(badgeId, timestamp)
+     * Met à jour le badge ● selon la fraîcheur de la donnée.
+     * Vert si < 2 min, rouge sinon.
+     */
+    function updateStatus(badgeId, timestamp) {
+        const diffMinutes = (new Date() - new Date(timestamp)) / 1000 / 60;
+        document.getElementById(badgeId).style.color =
+            diffMinutes <= 2 ? "#22c55e" : "#ef4444";
+    }
+
+    /**
+     * fetchLatest(device)
+     * Récupère la mesure la plus récente d'un device depuis Supabase.
+     */
+    async function fetchLatest(device) {
+        const response = await fetch(
+            `${SUPABASE_URL}/rest/v1/measurements?device_id=eq.${device}&order=timestamp.desc&limit=1`,
+            { headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` } }
+        );
+        return (await response.json())[0];
+    }
+
+    /**
+     * fetchRange(device, hours)
+     * Récupère toutes les mesures sur les N dernières heures (max 6000 points).
+     */
+    async function fetchRange(device, hours) {
+        const startDate = new Date(Date.now() - hours * 3600 * 1000).toISOString();
+        const response  = await fetch(
+            `${SUPABASE_URL}/rest/v1/measurements?device_id=eq.${device}&timestamp=gte.${startDate}&order=timestamp.asc&limit=6000`,
+            { headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` } }
+        );
+        return await response.json();
+    }
+
+    /**
+     * buildLabels(data, hours)
+     * Construit les labels de l'axe X à partir des timestamps.
+     * Format : JJ/MM HH:MM — identique pour toutes les plages.
+     */
+    function buildLabels(data) {
+        return data.map(d => new Date(d.timestamp).toLocaleString("fr-FR", {
+            timeZone: "Europe/Paris",
+            day: "2-digit", month: "2-digit",
+            hour: "2-digit", minute: "2-digit", hour12: false
+        }));
+    }
+
+    /**
+     * getSuggestedYBounds(values, padding)
+     * Calcule les bornes Y en ajoutant une marge autour des valeurs réelles.
+     * Padding par défaut : 0.25 (température/humidité), 0.5 pour la pression
+     * (variations plus faibles en hPa, marge un peu plus large pour lisibilité).
+     */
+    function getSuggestedYBounds(values, padding = 0.25) {
+        if (!values || values.length === 0) return { min: 0, max: 10 };
+
+        const minVal = Math.min(...values);
+        const maxVal = Math.max(...values);
+        let min = Math.floor((minVal - padding) * 10) / 10;
+        let max = Math.ceil((maxVal  + padding) * 10) / 10;
+
+        if (min === max) { min -= 0.5; max += 0.5; }
+        return { min, max };
+    }
+
+    /**
+     * createChart(canvasId, data, label, field, borderColor, backgroundColor, hours, zoomable)
+     * Fonction générique de création de graphique — utilisée pour les 3 grandeurs.
+     *
+     * @param {string}  canvasId         - id du canvas HTML cible
+     * @param {Array}   data             - tableau de mesures Supabase
+     * @param {string}  label            - libellé de la légende (ex: "Température (°C)")
+     * @param {string}  field            - champ à tracer dans data (temperature / humidity / pressure)
+     * @param {string}  borderColor      - couleur de la courbe
+     * @param {string}  backgroundColor  - couleur du remplissage sous la courbe
+     * @param {number}  hours            - plage temporelle (utilisé pour la config interne)
+     * @param {boolean} zoomable         - true = active le plugin zoom+pan (température uniquement)
+     * @returns {Chart} instance Chart.js
+     */
+    function createChart(canvasId, data, label, field, borderColor, backgroundColor, hours = 24, zoomable = false) {
+        const ctx    = document.getElementById(canvasId).getContext("2d");
+        const labels = buildLabels(data);
+        const values = data.map(d => d[field]);
+
+        // Padding plus grand pour la pression (variations faibles en hPa)
+        const bounds = getSuggestedYBounds(values, field === "pressure" ? 0.5 : 0.25);
+
+        return new Chart(ctx, {
+            type: "line",
+            data: {
+                labels,
+                datasets: [{
+                    label,
+                    data:            values,
+                    borderColor,
+                    backgroundColor,
+                    tension:         0.3,
+                    fill:            true,
+                    pointRadius:     0,      // pas de points — trop de données à cette échelle
+                    pointHoverRadius: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                interaction: { mode: "nearest", intersect: false },
+                scales: {
+                    x: {
+                        ticks: { color: "#94a3b8", maxRotation: 0, autoSkip: true, maxTicksLimit: 10 },
+                        grid:  { color: "rgba(148,163,184,0.15)" }
+                    },
+                    y: {
+                        min: bounds.min,
+                        max: bounds.max,
+                        ticks: { color: "#94a3b8" },
+                        grid:  { color: "rgba(148,163,184,0.15)" }
+                    }
+                },
+                plugins: {
+                    legend: { labels: { color: "#e2e8f0" } },
+                    // Zoom activé seulement pour le graphique température
+                    // Humidité et pression sont en lecture seule (pas de zoom accidentel)
+                    zoom: zoomable ? {
+                        pan:  { enabled: true, mode: "xy" },
+                        zoom: { wheel: { enabled: false }, pinch: { enabled: false }, drag: { enabled: false }, mode: "xy" }
+                    } : undefined,
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                // Ajoute l'unité physique selon la grandeur tracée
+                                const unit = field === "temperature" ? " °C"
+                                           : field === "humidity"    ? " %"
+                                           : field === "pressure"    ? " hPa" : "";
+                                return ` ${context.dataset.label} : ${context.parsed.y.toFixed(2)}${unit}`;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    /**
+     * setAutoYScale()
+     * Recalcule et applique les bornes Y du graphique température
+     * à partir des données actuellement chargées.
+     * Appelé après resetZoom() pour restaurer l'échelle adaptée aux données.
+     */
+    function setAutoYScale() {
+        if (!atmoChart || currentTempData.length === 0) return;
+        const bounds = getSuggestedYBounds(currentTempData.map(d => d.temperature), 0.25);
+        atmoChart.options.scales.y.min = bounds.min;
+        atmoChart.options.scales.y.max = bounds.max;
+        atmoChart.update();
+    }
+
+    // ── Fonctions zoom (température uniquement) ──────────────────────
+
+    function zoomIn()  { if (atmoChart) atmoChart.zoom({ x: 1.2 }); }
+    function zoomOut() { if (atmoChart) atmoChart.zoom({ x: 0.8 }); }
+
+    /**
+     * zoomYIn() / zoomYOut()
+     * Zoom sur l'axe Y en modifiant directement les bornes min/max.
+     */
+    function zoomYIn() {
+        if (!atmoChart) return;
+        const y = atmoChart.options.scales.y;
+        const c = (y.min + y.max) / 2, h = (y.max - y.min) / 2 * 0.7;
+        y.min = Math.round((c - h) * 100) / 100;
+        y.max = Math.round((c + h) * 100) / 100;
+        atmoChart.update();
+    }
+
+    function zoomYOut() {
+        if (!atmoChart) return;
+        const y = atmoChart.options.scales.y;
+        const c = (y.min + y.max) / 2, h = (y.max - y.min) / 2 * 1.4;
+        y.min = Math.round((c - h) * 100) / 100;
+        y.max = Math.round((c + h) * 100) / 100;
+        atmoChart.update();
+    }
+
+    /**
+     * resetZoom()
+     * Réinitialise le zoom Chart.js puis recalcule l'échelle Y
+     * pour qu'elle corresponde aux données actuelles (pas l'échelle initiale).
+     */
+    function resetZoom() {
+        if (!atmoChart) return;
+        atmoChart.resetZoom();
+        setAutoYScale();
+    }
+
+    // ── Rafraîchissement des valeurs courantes ───────────────────────
+
+    /**
+     * refreshValues()
+     * Met à jour les 3 valeurs affichées en haut de carte et le badge de fraîcheur.
+     * Appelé au démarrage puis toutes les 30 secondes.
+     */
+    async function refreshValues() {
+        const atmo = await fetchLatest("arduino_atmo");
+        if (!atmo) return;
+
+        document.getElementById("atmo_temp").textContent  = "Température : " + Number(atmo.temperature).toFixed(1) + " °C";
+        document.getElementById("atmo_hum").textContent   = "Humidité : "    + Number(atmo.humidity).toFixed(1)    + " %";
+        document.getElementById("atmo_press").textContent = "Pression : "    + Number(atmo.pressure).toFixed(1)    + " hPa";
+        document.getElementById("atmo_time").textContent  = "Dernière mesure : " + formatLocalTime(atmo.timestamp);
+        updateStatus("atmo_status", atmo.timestamp);
+    }
+
+    /**
+     * loadTemperatureChart()
+     * Recharge le graphique température pour la plage sélectionnée.
+     * Détruit l'instance précédente pour éviter les fuites mémoire.
+     */
+    async function loadTemperatureChart() {
+        const atmoData  = await fetchRange("arduino_atmo", currentTempRangeHours);
+        currentTempData = atmoData;
+        if (atmoChart) atmoChart.destroy();
+        atmoChart = createChart("atmo_chart", atmoData, "Température (°C)", "temperature",
+            "#3b82f6", "rgba(59,130,246,0.1)", currentTempRangeHours, true);
+    }
+
+    /**
+     * loadFixedCharts()
+     * Recharge les graphiques humidité et pression (toujours sur 24h).
+     * Ces graphiques n'ont pas de zoom — ils donnent un aperçu rapide
+     * sans interaction pour ne pas alourdir l'interface.
+     */
+    async function loadFixedCharts() {
+        const atmoData = await fetchRange("arduino_atmo", 24);
+
+        if (atmoHumChart)   atmoHumChart.destroy();
+        if (atmoPressChart) atmoPressChart.destroy();
+
+        atmoHumChart = createChart("atmo_hum_chart", atmoData, "Humidité (%)", "humidity",
+            "#22c55e", "rgba(34,197,94,0.1)", 24, false);
+
+        atmoPressChart = createChart("atmo_press_chart", atmoData, "Pression (hPa)", "pressure",
+            "#ef4444", "rgba(239,68,68,0.1)", 24, false);
+    }
+
+    // Recharge le graphique température quand la plage change
+    document.getElementById("temp_range_select").addEventListener("change", async function () {
+        currentTempRangeHours = Number(this.value);
+        await loadTemperatureChart();
+    });
+
+    /**
+     * initPage()
+     * Chargement séquentiel au démarrage :
+     * 1. Valeurs courantes
+     * 2. Graphique température (plage sélectionnée)
+     * 3. Graphiques humidité et pression (24h fixes)
+     */
+    async function initPage() {
+        await refreshValues();
+        await loadTemperatureChart();
+        await loadFixedCharts();
+    }
+
+    initPage();
+
+    // Rafraîchissement des valeurs courantes toutes les 30 secondes
+    setInterval(refreshValues, 30000);
+
+    // Rafraîchissement des graphiques toutes les 5 minutes.
+    // Température rechargée seulement si la plage est 24h (vue courante).
+    // Humidité et pression toujours rechargées (fixes sur 24h).
+    setInterval(async () => {
+        if (currentTempRangeHours === 24) await loadTemperatureChart();
+        await loadFixedCharts();
+    }, 300000);
+</script>
+
+<script>
+    /**
+     * toggleMenu() / closeMenu()
+     * Gestion de la sidebar responsive.
+     * Sur mobile (≤ 720px) : sidebar en overlay.
+     * Sur desktop : sidebar rétractable.
+     */
+    function toggleMenu() {
+        const sidebar = document.getElementById("sidebar");
+        const main    = document.querySelector(".main-content");
+        const overlay = document.getElementById("overlay");
+        if (!sidebar || !main || !overlay) return;
+        if (window.innerWidth <= 720) {
+            sidebar.classList.toggle("active");
+            overlay.classList.toggle("active");
+        } else {
+            sidebar.classList.toggle("closed");
+            main.classList.toggle("full");
+        }
+    }
+
+    function closeMenu() {
+        const sidebar = document.getElementById("sidebar");
+        const overlay = document.getElementById("overlay");
+        if (!sidebar || !overlay) return;
+        sidebar.classList.remove("active");
+        overlay.classList.remove("active");
+    }
+
+    document.querySelectorAll(".sidebar-menu a").forEach(a => {
+        a.addEventListener("click", () => {
+            if (window.innerWidth <= 720) closeMenu();
+        });
+    });
+</script>
+</body>
+</html>

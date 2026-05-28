@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Centre IRM – Datalogging</title>
+
+    <!-- Police Inter via Google Fonts — commune à toutes les pages -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+
+    <!-- Feuille de style commune à toutes les pages du dashboard -->
+    <link rel="stylesheet" href="style.css?v=final">
+
+    <style>
+        /* Ligne supérieure : note d'info + bouton actualiser */
+        .refresh-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 1.25rem;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        /* Note explicative sur le nombre de lignes attendues */
+        .expected-note { font-size: 13px; color: var(--muted); }
+
+        /* Bouton actualiser */
+        .btn-refresh {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+            font-weight: 600;
+            background: none;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 6px 14px;
+            cursor: pointer;
+            color: var(--text);
+            transition: background 0.15s;
+        }
+        .btn-refresh:hover { background: var(--surface-2); }
+
+        /* ── SLIDER ──────────────────────────────────────────────────
+           Les cartes de datalogging sont disposées en slider horizontal.
+           On affiche 2 cartes simultanément sur desktop, 1 sur mobile.
+           La navigation se fait via les flèches ou les points de pagination. */
+        .slider-nav-row {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 8px;
+            margin-bottom: 1rem;
+        }
+
+        /* Boutons flèche gauche/droite */
+        .nav-btn {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            width: 34px;
+            height: 34px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            color: var(--text);
+            font-size: 18px;
+            transition: background 0.15s;
+        }
+        .nav-btn:hover    { background: var(--surface-2); }
+        .nav-btn:disabled { opacity: 0.3; cursor: default; }
+
+        /* Conteneur masquant le débordement horizontal */
+        .track-outer { overflow: hidden; }
+
+        /* Piste du slider — translateX() appliqué dynamiquement en JS */
+        .dl-track {
+            display: flex;
+            gap: 20px;
+            transition: transform 0.3s ease;
+        }
+
+        /* Carte d'un jour — 50% de largeur pour en afficher 2 simultanément sur desktop */
+        .dl-card {
+            flex: 0 0 calc(50% - 10px);
+            min-width: 0;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 1.35rem 1.5rem;
+            box-sizing: border-box;
+        }
+
+        /* Bordure bleue pour distinguer la carte du jour courant */
+        .dl-card.today-card { border: 2px solid #378ADD; }
+
+        .dl-card-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            margin-bottom: 1rem;
+            gap: 8px;
+        }
+
+        .dl-filename { font-size: 14px; font-weight: 600; color: var(--text); }
+        .dl-relday   { font-size: 12px; font-weight: 400; color: var(--muted); margin-top: 2px; }
+
+        /* Badge de statut (Complet / Incomplet / Problème / En cours / Aucune donnée) */
+        .dl-badge {
+            font-size: 11px;
+            font-weight: 700;
+            padding: 3px 10px;
+            border-radius: 20px;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+
+        /* Couleurs des badges selon le statut de complétion */
+        .badge-ok         { background: #d1fae5; color: #065f46; } /* ≥ 95% */
+        .badge-warn       { background: #fef3c7; color: #92400e; } /* 70-95% ou surplus */
+        .badge-error      { background: #fee2e2; color: #991b1b; } /* < 70% */
+        .badge-inprogress { background: #e0e7ff; color: #3730a3; } /* jour en cours */
+        .badge-nodata     { background: #f1f5f9; color: #475569; } /* aucun résumé reçu */
+
+        /* Grille des 3 stats : lignes reçues / attendues / complétion */
+        .dl-stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+            margin-bottom: 1rem;
+        }
+        .dl-stat       { background: var(--surface-2); border-radius: 10px; padding: 0.6rem 0.75rem; }
+        .dl-stat-label { font-size: 11px; color: var(--muted); margin-bottom: 3px; }
+        .dl-stat-value { font-size: 18px; font-weight: 700; color: var(--text); }
+
+        /* Couleurs des valeurs selon le niveau de complétion */
+        .dl-stat-value.ok    { color: #059669; }
+        .dl-stat-value.warn  { color: #d97706; }
+        .dl-stat-value.error { color: #dc2626; }
+
+        /* Barre de progression de complétion */
+        .dl-bar-wrap  { height: 5px; background: var(--surface-2); border-radius: 3px; overflow: hidden; margin-bottom: 8px; }
+        .dl-bar-fill  { height: 100%; border-radius: 3px; transition: width 0.5s ease; }
+        .bar-ok       { background: #059669; }
+        .bar-warn     { background: #d97706; }
+        .bar-error    { background: #dc2626; }
+        .bar-blue     { background: #378ADD; } /* jour en cours */
+        .dl-bar-label { font-size: 11.5px; color: var(--muted); }
+
+        /* Points de pagination cliquables sous le slider */
+        .dots-row       { display: flex; justify-content: center; gap: 6px; margin-top: 1.25rem; }
+        .dot-btn        { width: 7px; height: 7px; border-radius: 50%; background: var(--border); border: none; padding: 0; cursor: pointer; transition: background 0.2s; }
+        .dot-btn.active { background: #378ADD; }
+
+        .loading-msg { text-align: center; padding: 3rem; color: var(--muted); font-size: 14px; }
+        .last-update { font-size: 12px; color: var(--muted); margin-top: 1rem; }
+
+        /* Mobile — une carte pleine largeur, textes légèrement réduits */
+        @media (max-width: 600px) {
+            .dl-card {
+                flex: 0 0 100%;
+                padding: 1rem 1.1rem;
+            }
+            .dl-stat-value { font-size: 15px; }
+            .dl-stat-label { font-size: 10px; }
+            .dl-filename   { font-size: 13px; }
+            .dl-badge      { font-size: 10px; }
+            .dl-bar-label  { font-size: 11px; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Bouton pour ouvrir/fermer la sidebar.
+         Sur mobile (≤ 720px) : overlay. Sur desktop : rétractable. -->
+    <button class="menu-toggle" type="button" aria-label="Ouvrir le menu" onclick="toggleMenu()">☰</button>
+
+    <!-- Fond semi-transparent derrière la sidebar sur mobile -->
+    <div id="overlay" onclick="closeMenu()"></div>
+
+    <div class="app-shell">
+
+        <!-- ─────────────────────────────────────────────
+             SIDEBAR — Navigation latérale
+        ──────────────────────────────────────────────── -->
+        <aside id="sidebar" class="sidebar">
+            <div class="sidebar-brand"><span>IRM Supervision</span><img src="Logo_IRM.png" alt="Logo IRM"></div>
+            <div class="sidebar-section">
+                <div class="sidebar-title"><span>Monitoring</span><span>⌄</span></div>
+                <nav class="sidebar-menu">
+                    <a href="index.html"       data-page="index">      <span class="dot"></span><span class="label-text">Vue générale</span></a>
+                    <a href="atmosphere.html"  data-page="atmosphere"> <span class="dot"></span><span class="label-text">Atmosphère</span></a>
+                    <a href="eaufroide.html"   data-page="eaufroide">  <span class="dot"></span><span class="label-text">Eau glacée</span></a>
+                    <a href="compresseur.html" data-page="compresseur"><span class="dot"></span><span class="label-text">Compresseur</span></a>
+                    <a href="groupefroid.html" data-page="groupefroid"><span class="dot"></span><span class="label-text">Groupe froid</span></a>
+                </nav>
+            </div>
+            <div class="sidebar-section">
+                <div class="sidebar-title"><span>Système</span><span>⌄</span></div>
+                <nav class="sidebar-menu">
+                    <a href="alerte.html"      data-page="alerte">     <span class="dot"></span><span class="label-text">Alertes</span></a>
+                    <a href="datalogging.html" data-page="datalogging"><span class="dot"></span><span class="label-text">Datalogging</span></a>
+                </nav>
+            </div>
+            <div class="sidebar-footer">Plateforme IRM – INT<br>Consultation distante</div>
+        </aside>
+
+        <!-- ─────────────────────────────────────────────
+             CONTENU PRINCIPAL
+        ──────────────────────────────────────────────── -->
+        <main class="main-content">
+            <div class="topbar">
+                <div>
+                    <h1 class="page-title">Datalogging</h1>
+                    <div class="page-subtitle">Vérification de la sauvegarde CSV quotidienne</div>
+                </div>
+                <!-- Rappel : lecture seule via Supabase REST -->
+                <div class="topbar-actions">
+                    <span class="badge-soft">Supabase REST</span>
+                    <span class="badge-soft">Lecture seule</span>
+                </div>
+            </div>
+
+            <div class="container">
+
+                <!-- Note sur le nombre attendu + bouton actualiser -->
+                <div class="refresh-row">
+                    <p class="expected-note">
+                        Nombre de lignes comptées à minuit par le Pi dans le fichier CSV du jour —
+                        <strong>2 881 lignes</strong> attendues par jour complet
+                    </p>
+                    <button class="btn-refresh" onclick="loadData()">↻ Actualiser</button>
+                </div>
+
+                <!-- Flèches de navigation du slider -->
+                <div class="slider-nav-row">
+                    <button class="nav-btn" id="btn-prev" onclick="slideDir(-1)" disabled title="Jours précédents">&#8592;</button>
+                    <button class="nav-btn" id="btn-next" onclick="slideDir(1)"  title="Jours suivants">&#8594;</button>
+                </div>
+
+                <!-- Piste du slider — les cartes sont injectées dynamiquement par renderSlider() -->
+                <div class="track-outer">
+                    <div class="dl-track" id="dl-track">
+                        <div class="loading-msg">Chargement des données...</div>
+                    </div>
+                </div>
+
+                <!-- Points de pagination cliquables -->
+                <div class="dots-row" id="dots-row"></div>
+
+                <!-- Heure de la dernière actualisation -->
+                <div class="last-update" id="last-update"></div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Marque le lien "Datalogging" comme actif dans la sidebar -->
+    <script>document.querySelector('[data-page="datalogging"]').classList.add('active');</script>
+
+    <script>
+        // ── Connexion Supabase ────────────────────────────────────────────
+        // Clé publique (publishable) — lecture seule, sans risque d'exposition.
+        const SUPABASE_URL = "https://xkqizqpflgcmyiqluuie.supabase.co";
+        const SUPABASE_KEY = "sb_publishable_87i8-j5iiLISsoBSBvC7ng_RlE5TPrr";
+
+        // Nombre de lignes attendues pour un jour complet
+        const EXPECTED = 2881;
+
+        // Nombre de cartes visibles simultanément sur desktop
+        const VISIBLE = 2;
+
+        // Tableau des 7 derniers jours chargés depuis Supabase
+        let allDays = [];
+
+        // Index de la première carte visible dans le slider
+        let offset = 0;
+
+        /**
+         * getDateStr(daysAgo)
+         * Retourne la date au format YYYY-MM-DD pour un jour donné.
+         * daysAgo = 0 → aujourd'hui, 1 → hier, etc.
+         */
+        function getDateStr(daysAgo) {
+            const d = new Date();
+            d.setDate(d.getDate() - daysAgo);
+            return d.toISOString().slice(0, 10);
+        }
+
+        /**
+         * relLabel(daysAgo)
+         * Retourne un libellé relatif lisible pour un jour donné.
+         */
+        function relLabel(daysAgo) {
+            if (daysAgo === 0) return "aujourd'hui";
+            if (daysAgo === 1) return "hier";
+            return `il y a ${daysAgo} jours`;
+        }
+
+        /**
+         * buildCard(day)
+         * Génère le HTML d'une carte de datalogging pour un jour donné.
+         *
+         * Logique de statut :
+         * - Aujourd'hui → "En cours" (résumé envoyé à minuit, pas encore dispo)
+         * - Aucune donnée → Pi éteint ou erreur réseau à minuit
+         * - lineCount > EXPECTED → surplus (doublon d'envoi probable)
+         * - pct ≥ 95% → Complet
+         * - pct ≥ 70% → Incomplet
+         * - pct < 70% → Problème
+         */
+        function buildCard(day) {
+            const { dateStr, daysAgo, lineCount, loaded } = day;
+            const isToday = daysAgo === 0;
+
+            const pctRaw = loaded ? (lineCount / EXPECTED) * 100 : 0;
+            const pctBar = Math.min(100, pctRaw); // barre plafonnée à 100%
+
+            let badgeClass, badgeText, valClass, barClass, bottomMsg;
+
+            if (isToday) {
+                badgeClass = 'badge-inprogress';
+                badgeText  = 'En cours';
+                valClass   = '';
+                barClass   = 'bar-blue';
+                bottomMsg  = 'Le Pi enverra le bilan à minuit';
+
+            } else if (!loaded) {
+                badgeClass = 'badge-nodata';
+                badgeText  = 'Aucune donnée';
+                valClass   = '';
+                barClass   = 'bar-ok';
+                bottomMsg  = 'Aucun résumé reçu pour ce jour — Pi éteint ou erreur réseau à minuit';
+
+            } else if (lineCount > EXPECTED) {
+                badgeClass = 'badge-warn';
+                badgeText  = 'Surplus';
+                valClass   = 'warn';
+                barClass   = 'bar-warn';
+                bottomMsg  = `⚠ ${(lineCount - EXPECTED).toLocaleString('fr-FR')} lignes en excès — possible doublon d'envoi`;
+
+            } else if (pctRaw >= 95) {
+                badgeClass = 'badge-ok';
+                badgeText  = 'Complet';
+                valClass   = 'ok';
+                barClass   = 'bar-ok';
+                const diff = EXPECTED - lineCount;
+                bottomMsg  = diff === 0
+                    ? '✓ Sauvegarde complète — tous les devices ont correctement transmis'
+                    : `✓ Quasi-complet — ${diff} ligne${diff > 1 ? 's' : ''} manquante${diff > 1 ? 's' : ''}`;
+
+            } else if (pctRaw >= 70) {
+                badgeClass = 'badge-warn';
+                badgeText  = 'Incomplet';
+                valClass   = 'warn';
+                barClass   = 'bar-warn';
+                bottomMsg  = `⚠ Manque ${(EXPECTED - lineCount).toLocaleString('fr-FR')} lignes — possible interruption`;
+
+            } else {
+                badgeClass = 'badge-error';
+                badgeText  = 'Problème';
+                valClass   = 'error';
+                barClass   = 'bar-error';
+                bottomMsg  = `✗ Manque ${(EXPECTED - lineCount).toLocaleString('fr-FR')} lignes — vérifier les devices`;
+            }
+
+            // Stats masquées pour aujourd'hui (résumé pas encore envoyé)
+            const pctDisplay  = Number.isInteger(pctRaw) ? pctRaw + '%' : pctRaw.toFixed(2) + '%';
+            const pctStr      = (!loaded || isToday) ? '—' : pctDisplay;
+            const receivedStr = (loaded && !isToday) ? lineCount.toLocaleString('fr-FR') : '—';
+
+            return `
+                <div class="dl-card${isToday ? ' today-card' : ''}">
+                    <div class="dl-card-header">
+                        <div>
+                            <div class="dl-filename">📄 ${dateStr}.csv</div>
+                            <div class="dl-relday">${relLabel(daysAgo)}</div>
+                        </div>
+                        <span class="dl-badge ${badgeClass}">${badgeText}</span>
+                    </div>
+                    <div class="dl-stats">
+                        <div class="dl-stat">
+                            <div class="dl-stat-label">Lignes reçues</div>
+                            <div class="dl-stat-value ${valClass}">${receivedStr}</div>
+                        </div>
+                        <div class="dl-stat">
+                            <div class="dl-stat-label">Attendues</div>
+                            <div class="dl-stat-value">${isToday ? '—' : EXPECTED.toLocaleString('fr-FR')}</div>
+                        </div>
+                        <div class="dl-stat">
+                            <div class="dl-stat-label">Complétion</div>
+                            <div class="dl-stat-value ${valClass}">${pctStr}</div>
+                        </div>
+                    </div>
+                    <!-- Barre de progression — largeur = % de complétion, plafonnée à 100% -->
+                    <div class="dl-bar-wrap">
+                        <div class="dl-bar-fill ${barClass}" style="width:${(loaded && !isToday) ? pctBar : 0}%"></div>
+                    </div>
+                    <div class="dl-bar-label">${bottomMsg}</div>
+                </div>
+            `;
+        }
+
+        /**
+         * getVisibleCount()
+         * Retourne le nombre de cartes visibles selon la taille de l'écran.
+         * 1 sur mobile (≤ 600px) pour une meilleure lisibilité, 2 sur desktop.
+         */
+        function getVisibleCount() {
+            return window.innerWidth <= 600 ? 1 : VISIBLE;
+        }
+
+        /**
+         * renderSlider()
+         * Reconstruit le HTML du slider, repositionne la piste via translateX,
+         * et recrée les points de pagination.
+         *
+         * Utilise getBoundingClientRect() pour mesurer la largeur réelle des cartes —
+         * plus fiable que offsetWidth sur mobile où le layout peut ne pas être finalisé.
+         */
+        function renderSlider() {
+            const visible = getVisibleCount();
+            const track   = document.getElementById('dl-track');
+            track.innerHTML = allDays.map(d => buildCard(d)).join('');
+
+            const maxOffset = Math.max(0, allDays.length - visible);
+
+            // Clamp l'offset si on réduit la fenêtre (ex: rotation mobile)
+            if (offset > maxOffset) offset = maxOffset;
+
+            // Calcule le décalage en pixels à partir de la largeur réelle d'une carte
+            const cards = track.querySelectorAll('.dl-card');
+            let shift = 0;
+            if (cards.length > 0) {
+                const cardW = cards[0].getBoundingClientRect().width;
+                shift = offset * (cardW + 20);
+            }
+            track.style.transform = `translateX(-${shift}px)`;
+
+            // Active/désactive les boutons flèches selon la position
+            document.getElementById('btn-prev').disabled = offset <= 0;
+            document.getElementById('btn-next').disabled = offset >= maxOffset;
+
+            // Recrée les points de pagination cliquables
+            const dotsRow = document.getElementById('dots-row');
+            dotsRow.innerHTML = '';
+            for (let i = 0; i <= maxOffset; i++) {
+                const btn = document.createElement('button');
+                btn.className = 'dot-btn' + (i === offset ? ' active' : '');
+                btn.setAttribute('aria-label', `Aller à la position ${i + 1}`);
+                btn.addEventListener('click', () => { offset = i; renderSlider(); });
+                dotsRow.appendChild(btn);
+            }
+        }
+
+        /**
+         * slideDir(dir)
+         * Déplace le slider d'un cran dans la direction donnée.
+         * @param {number} dir - +1 (suivant) ou -1 (précédent)
+         */
+        function slideDir(dir) {
+            const maxOffset = Math.max(0, allDays.length - getVisibleCount());
+            offset = Math.max(0, Math.min(maxOffset, offset + dir));
+            renderSlider();
+        }
+
+        /**
+         * getLinesForDay(dateStr, daysAgo)
+         * Récupère depuis Supabase le nombre de lignes enregistrées pour un jour.
+         *
+         * Le Pi envoie à minuit un résumé :
+         *   { device_id: "2026-05-19.csv", line_count: 2881 }
+         * On interroge avec le nom du fichier CSV comme device_id.
+         *
+         * Pour aujourd'hui retourne null directement (résumé pas encore envoyé).
+         */
+        async function getLinesForDay(dateStr, daysAgo) {
+            if (daysAgo === 0) return null;
+
+            const res = await fetch(
+                `${SUPABASE_URL}/rest/v1/measurements?device_id=eq.${dateStr}.csv&select=line_count&limit=1`,
+                { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
+            );
+
+            if (!res.ok) return null;
+
+            const data = await res.json();
+            if (!Array.isArray(data) || data.length === 0) return null;
+            return data[0].line_count ?? null;
+        }
+
+        /**
+         * loadData()
+         * Charge les données des 7 derniers jours en parallèle via Promise.allSettled.
+         * Positionne le slider sur les jours les plus récents par défaut.
+         */
+        async function loadData() {
+            document.getElementById('dl-track').innerHTML = '<div class="loading-msg">Chargement...</div>';
+            document.getElementById('dots-row').innerHTML = '';
+            allDays = [];
+
+            // Construit la liste des 7 derniers jours (du plus ancien au plus récent)
+            const days = [];
+            for (let i = 6; i >= 0; i--) {
+                days.push({ daysAgo: i, dateStr: getDateStr(i) });
+            }
+
+            // Toutes les requêtes Supabase en parallèle
+            // Promise.allSettled garantit que toutes sont traitées même si certaines échouent
+            const results = await Promise.allSettled(
+                days.map(d => getLinesForDay(d.dateStr, d.daysAgo))
+            );
+
+            allDays = days.map((d, idx) => {
+                const r         = results[idx];
+                const lineCount = (r.status === 'fulfilled' && r.value !== null) ? r.value : null;
+                return {
+                    ...d,
+                    lineCount: lineCount ?? 0,
+                    loaded:    lineCount !== null
+                };
+            });
+
+            // Positionne sur les jours les plus récents par défaut
+            offset = Math.max(0, allDays.length - getVisibleCount());
+            renderSlider();
+
+            document.getElementById('last-update').textContent =
+                'Mis à jour le ' + new Date().toLocaleString('fr-FR');
+        }
+
+        // Chargement initial
+        loadData();
+
+        // Recalcule le slider si la fenêtre est redimensionnée (rotation écran, etc.)
+        window.addEventListener('resize', () => renderSlider());
+    </script>
+
+    <script>
+        /**
+         * toggleMenu() / closeMenu()
+         * Gestion de la sidebar responsive.
+         * Sur mobile (≤ 720px) : sidebar en overlay.
+         * Sur desktop : sidebar rétractable.
+         */
+        function toggleMenu() {
+            const sidebar = document.getElementById("sidebar");
+            const main    = document.querySelector(".main-content");
+            const overlay = document.getElementById("overlay");
+            if (!sidebar || !main || !overlay) return;
+            if (window.innerWidth <= 720) {
+                sidebar.classList.toggle("active");
+                overlay.classList.toggle("active");
+            } else {
+                sidebar.classList.toggle("closed");
+                main.classList.toggle("full");
+            }
+        }
+
+        function closeMenu() {
+            const sidebar = document.getElementById("sidebar");
+            const overlay = document.getElementById("overlay");
+            if (!sidebar || !overlay) return;
+            sidebar.classList.remove("active");
+            overlay.classList.remove("active");
+        }
+
+        // Ferme la sidebar sur mobile après navigation
+        document.querySelectorAll(".sidebar-menu a").forEach(a => {
+            a.addEventListener("click", () => {
+                if (window.innerWidth <= 720) closeMenu();
+            });
+        });
+    </script>
+</body>
+</html>

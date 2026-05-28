@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Données eau froide</title>
+
+<!-- Police Inter via Google Fonts — commune à toutes les pages -->
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+
+<!-- Feuille de style commune à toutes les pages du dashboard -->
+<link rel="stylesheet" href="style.css?v=final">
+
+<!-- Chart.js — bibliothèque de tracé de graphiques -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<!-- Hammer.js — gestion des gestes tactiles (requis par chartjs-plugin-zoom) -->
+<script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8"></script>
+
+<!-- Plugin zoom/pan pour Chart.js — permet le zoom bouton et le pan au clic maintenu -->
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1"></script>
+
+<style>
+/* Positionnement relatif pour le badge de statut en position absolue */
+.card { position: relative; }
+
+/* Badge coloré (● vert/rouge) indiquant si la donnée est récente -->
+.status-badge {
+    position: absolute;
+    top: 20px;
+    right: 25px;
+    font-size: 1.4rem;
+}
+
+/* Barre de contrôles du graphique : sélecteur de plage + boutons zoom -->
+.chart-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin: 18px 0 10px 0;
+}
+
+.chart-controls label {
+    color: var(--text);
+    font-weight: 600;
+}
+
+.chart-controls button,
+.chart-controls select {
+    background: var(--surface-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 12px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.95rem;
+    transition: background 0.15s ease;
+}
+
+.chart-controls button:hover,
+.chart-controls select:hover { background: var(--border); }
+
+/* Note d'aide affichée sous les contrôles -->
+.info-note {
+    margin-top: 8px;
+    color: #94a3b8;
+    font-size: 0.92rem;
+}
+</style>
+</head>
+
+<body>
+
+<!-- Bouton pour ouvrir/fermer la sidebar.
+     Sur mobile (≤ 720px) : ouvre la sidebar en overlay.
+     Sur desktop : rétracte la sidebar pour agrandir le contenu. -->
+<button class="menu-toggle" type="button" aria-label="Ouvrir le menu" onclick="toggleMenu()">☰</button>
+
+<!-- Fond semi-transparent affiché derrière la sidebar sur mobile -->
+<div id="overlay" onclick="closeMenu()"></div>
+
+<!-- Structure principale : sidebar fixe à gauche + contenu à droite -->
+<div class="app-shell">
+
+    <!-- ─────────────────────────────────────────────
+         SIDEBAR — Navigation latérale
+    ──────────────────────────────────────────────── -->
+    <aside id="sidebar" class="sidebar">
+
+        <div class="sidebar-brand">
+            <span>IRM Supervision</span>
+            <img src="Logo_IRM.png" alt="Logo IRM">
+        </div>
+
+        <div class="sidebar-section">
+            <div class="sidebar-title"><span>Monitoring</span><span>⌄</span></div>
+            <nav class="sidebar-menu">
+                <a href="index.html"       data-page="index">      <span class="dot"></span><span class="label-text">Vue générale</span></a>
+                <a href="atmosphere.html"  data-page="atmosphere"> <span class="dot"></span><span class="label-text">Atmosphère</span></a>
+                <a href="eaufroide.html"   data-page="eaufroide">  <span class="dot"></span><span class="label-text">Eau glacée</span></a>
+                <a href="compresseur.html" data-page="compresseur"><span class="dot"></span><span class="label-text">Compresseur</span></a>
+                <a href="groupefroid.html" data-page="groupefroid"><span class="dot"></span><span class="label-text">Groupe froid</span></a>
+            </nav>
+        </div>
+
+        <div class="sidebar-section">
+            <div class="sidebar-title"><span>Système</span><span>⌄</span></div>
+            <nav class="sidebar-menu">
+                <a href="alerte.html"      data-page="alerte">     <span class="dot"></span><span class="label-text">Alertes</span></a>
+                <a href="datalogging.html" data-page="datalogging"><span class="dot"></span><span class="label-text">Datalogging</span></a>
+            </nav>
+        </div>
+
+        <div class="sidebar-footer">Plateforme IRM – INT<br>Consultation distante</div>
+
+    </aside>
+
+    <!-- ─────────────────────────────────────────────
+         CONTENU PRINCIPAL
+    ──────────────────────────────────────────────── -->
+    <main class="main-content">
+
+        <div class="topbar">
+            <div>
+                <h1 class="page-title">Données eau glacée</h1>
+                <div class="page-subtitle">Température du circuit eau glacée (sonde NTC)</div>
+            </div>
+            <!-- Rappel : interface lecture seule, données lues via Supabase REST -->
+            <div class="topbar-actions">
+                <span class="badge-soft">Supabase REST</span>
+                <span class="badge-soft">Lecture seule</span>
+            </div>
+        </div>
+
+        <div class="container">
+
+            <!-- Carte température eau glacée — arduino_ntc_01
+                 Affiche la dernière valeur + un graphique historique
+                 avec sélection de plage et zoom manuel. -->
+            <div class="card">
+                <h2>Température eau glacée (NTC)</h2>
+
+                <!-- Badge ● coloré : vert si mesure < 2 min, rouge sinon -->
+                <div id="ntc_status" class="status-badge">●</div>
+
+                <!-- Valeur courante de température -->
+                <div class="value" id="water_temp">-- °C</div>
+
+                <!-- Horodatage de la dernière mesure reçue -->
+                <div class="timestamp" id="water_time"></div>
+
+                <!-- Contrôles du graphique :
+                     - Sélecteur de plage temporelle (24h à 4 jours)
+                     - Boutons de zoom sur les axes X et Y
+                     - Réinitialisation du zoom -->
+                <div class="chart-controls">
+                    <label for="water_range_select">Plage température :</label>
+                    <select id="water_range_select">
+                        <option value="24">24 h</option>
+                        <option value="48">48 h</option>
+                        <option value="72">3 jours</option>
+                        <option value="96">4 jours</option>
+                    </select>
+                    <button onclick="zoomIn()">Zoom X +</button>
+                    <button onclick="zoomOut()">Zoom X -</button>
+                    <button onclick="zoomYIn()">Zoom Y +</button>
+                    <button onclick="zoomYOut()">Zoom Y -</button>
+                    <button onclick="resetZoom()">Réinitialiser zoom</button>
+                </div>
+
+                <!-- Aide à la navigation dans le graphique -->
+                <div class="info-note">Clic maintenu + déplacement = navigation dans le graphe</div>
+
+                <!-- Canvas Chart.js — le graphique est rendu ici -->
+                <canvas id="water_chart" height="120"></canvas>
+            </div>
+
+        </div>
+    </main>
+</div>
+
+<!-- Marque le lien "Eau glacée" comme actif dans la sidebar -->
+<script>document.querySelector('[data-page="eaufroide"]').classList.add('active');</script>
+
+<script>
+    // ── Connexion Supabase ────────────────────────────────────────────
+    // Clé publique (publishable) — lecture seule, sans risque d'exposition.
+    const SUPABASE_URL = "https://xkqizqpflgcmyiqluuie.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_87i8-j5iiLISsoBSBvC7ng_RlE5TPrr";
+
+    // Instance Chart.js courante — détruite et recréée à chaque changement de plage
+    let waterChart;
+
+    // Données brutes actuellement affichées dans le graphique
+    let currentData = [];
+
+    // Plage temporelle sélectionnée (en heures) — 24h par défaut
+    let currentRangeHours = 24;
+
+    /**
+     * formatLocalTime(utcString)
+     * Convertit un timestamp UTC (stocké dans Supabase) en heure locale
+     * française au format AAAA-MM-JJ à HH:MM.
+     * Utilise Intl.DateTimeFormat pour une décomposition précise des parties.
+     */
+    function formatLocalTime(utcString) {
+        const date  = new Date(utcString);
+        const parts = new Intl.DateTimeFormat("fr-FR", {
+            timeZone: "Europe/Paris",
+            year:     "numeric",
+            month:    "2-digit",
+            day:      "2-digit",
+            hour:     "2-digit",
+            minute:   "2-digit",
+            hour12:   false
+        }).formatToParts(date);
+
+        const get = type => parts.find(p => p.type === type).value;
+        return `${get("year")}-${get("month")}-${get("day")} à ${get("hour")}:${get("minute")}`;
+    }
+
+    /**
+     * updateStatus(badgeId, timestamp)
+     * Met à jour la couleur du badge ● selon la fraîcheur de la donnée.
+     * Vert si la dernière mesure date de moins de 2 minutes, rouge sinon.
+     * Permet de détecter rapidement une perte de communication avec l'Arduino.
+     */
+    function updateStatus(badgeId, timestamp) {
+        const diffMinutes = (new Date() - new Date(timestamp)) / 1000 / 60;
+        document.getElementById(badgeId).style.color =
+            diffMinutes <= 2 ? "#22c55e" : "#ef4444";
+    }
+
+    /**
+     * fetchLatest(device)
+     * Récupère la mesure la plus récente d'un device depuis Supabase.
+     * Utilisé pour afficher la valeur courante et l'horodatage.
+     *
+     * @param {string} device - device_id Supabase (ex: "arduino_ntc_01")
+     * @returns {object|undefined} - dernier enregistrement ou undefined si vide
+     */
+    async function fetchLatest(device) {
+        const response = await fetch(
+            `${SUPABASE_URL}/rest/v1/measurements?device_id=eq.${device}&order=timestamp.desc&limit=1`,
+            { headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` } }
+        );
+        return (await response.json())[0];
+    }
+
+    /**
+     * fetchRange(device, hours)
+     * Récupère toutes les mesures d'un device sur les N dernières heures.
+     * Utilisé pour construire le graphique historique.
+     * Limité à 6000 points pour éviter de surcharger le navigateur.
+     *
+     * @param {string} device - device_id Supabase
+     * @param {number} hours  - nombre d'heures à récupérer en arrière
+     * @returns {Array} - tableau de mesures triées par timestamp croissant
+     */
+    async function fetchRange(device, hours) {
+        const startDate = new Date(Date.now() - hours * 3600 * 1000).toISOString();
+        const response  = await fetch(
+            `${SUPABASE_URL}/rest/v1/measurements?device_id=eq.${device}&timestamp=gte.${startDate}&order=timestamp.asc&limit=6000`,
+            { headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` } }
+        );
+        return await response.json();
+    }
+
+    /**
+     * getSuggestedYBounds(values, padding)
+     * Calcule les bornes min/max de l'axe Y en ajoutant une marge
+     * autour des valeurs réelles pour une meilleure lisibilité.
+     * Évite un axe collé aux données qui rendrait les variations illisibles.
+     *
+     * @param {number[]} values  - tableau de valeurs numériques
+     * @param {number}   padding - marge à ajouter de chaque côté (défaut 0.25°C)
+     * @returns {{min: number, max: number}}
+     */
+    function getSuggestedYBounds(values, padding = 0.25) {
+        if (!values || values.length === 0) return { min: 0, max: 20 };
+
+        const minVal = Math.min(...values);
+        const maxVal = Math.max(...values);
+        let min = Math.floor((minVal - padding) * 10) / 10;
+        let max = Math.ceil((maxVal  + padding) * 10) / 10;
+
+        // Si toutes les valeurs sont identiques, on force un écart minimal
+        if (min === max) { min -= 0.5; max += 0.5; }
+
+        return { min, max };
+    }
+
+    /**
+     * createChart(data)
+     * Crée et retourne une instance Chart.js avec les données fournies.
+     * Configure le graphique en ligne avec :
+     * - Axe Y auto-ajusté via getSuggestedYBounds()
+     * - Plugin zoom activé en mode pan uniquement (pas de zoom molette)
+     * - Tooltip affichant la valeur avec 2 décimales
+     *
+     * @param {Array} data - tableau de mesures Supabase
+     * @returns {Chart} instance Chart.js
+     */
+    function createChart(data) {
+        const ctx    = document.getElementById("water_chart").getContext("2d");
+        const labels = data.map(d => new Date(d.timestamp).toLocaleString("fr-FR", {
+            timeZone: "Europe/Paris",
+            day: "2-digit", month: "2-digit",
+            hour: "2-digit", minute: "2-digit", hour12: false
+        }));
+        const values = data.map(d => d.temperature);
+        const bounds = getSuggestedYBounds(values, 0.25);
+
+        return new Chart(ctx, {
+            type: "line",
+            data: {
+                labels,
+                datasets: [{
+                    label:           "Température eau glacée",
+                    data:            values,
+                    borderColor:     "#3b82f6",
+                    backgroundColor: "rgba(59,130,246,0.10)",
+                    tension:         0.25,
+                    pointRadius:     2,
+                    pointHoverRadius: 4,
+                    fill:            false
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                interaction: { mode: "nearest", intersect: false },
+                scales: {
+                    x: {
+                        ticks: { color: "#94a3b8", maxRotation: 0, autoSkip: true, maxTicksLimit: 10 },
+                        grid:  { color: "rgba(148,163,184,0.08)" }
+                    },
+                    y: {
+                        min:   bounds.min,
+                        max:   bounds.max,
+                        ticks: { color: "#94a3b8" },
+                        grid:  { color: "rgba(148,163,184,0.08)" }
+                    }
+                },
+                plugins: {
+                    legend: { labels: { color: "#e2e8f0" } },
+                    zoom: {
+                        // Pan (glisser) activé sur les deux axes
+                        pan: { enabled: true, mode: "xy" },
+                        // Zoom par molette/pinch/drag désactivé volontairement
+                        // pour éviter les zooms accidentels — utiliser les boutons
+                        zoom: {
+                            wheel:  { enabled: false },
+                            pinch:  { enabled: false },
+                            drag:   { enabled: false },
+                            mode:   "xy"
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: ctx => ` ${ctx.dataset.label} : ${ctx.parsed.y.toFixed(2)} °C`
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // ── Fonctions de zoom manuel (appelées par les boutons) ──────────
+
+    /** Zoom avant sur l'axe X (facteur 1.2) */
+    function zoomIn()  { if (waterChart) waterChart.zoom({ x: 1.2 }); }
+
+    /** Zoom arrière sur l'axe X (facteur 0.8) */
+    function zoomOut() { if (waterChart) waterChart.zoom({ x: 0.8 }); }
+
+    /**
+     * zoomYIn() / zoomYOut()
+     * Zoom sur l'axe Y en réduisant/élargissant la plage min-max
+     * autour du centre courant de l'axe.
+     * Le zoom Chart.js natif ne gère pas bien l'axe Y seul,
+     * donc on modifie directement les options de l'échelle.
+     */
+    function zoomYIn() {
+        if (!waterChart) return;
+        const y      = waterChart.options.scales.y;
+        const center = (y.min + y.max) / 2;
+        const half   = (y.max - y.min) / 2 * 0.7;
+        y.min = Math.round((center - half) * 100) / 100;
+        y.max = Math.round((center + half) * 100) / 100;
+        waterChart.update();
+    }
+
+    function zoomYOut() {
+        if (!waterChart) return;
+        const y      = waterChart.options.scales.y;
+        const center = (y.min + y.max) / 2;
+        const half   = (y.max - y.min) / 2 * 1.4;
+        y.min = Math.round((center - half) * 100) / 100;
+        y.max = Math.round((center + half) * 100) / 100;
+        waterChart.update();
+    }
+
+    /** Réinitialise le zoom et le pan à l'état initial du graphique */
+    function resetZoom() { if (waterChart) waterChart.resetZoom(); }
+
+    // ── Rafraîchissement des données ─────────────────────────────────
+
+    /**
+     * refreshValues()
+     * Met à jour la valeur courante et l'horodatage affichés en haut de carte.
+     * Appelé au chargement puis toutes les 30 secondes.
+     */
+    async function refreshValues() {
+        const ntc = await fetchLatest("arduino_ntc_01");
+        if (!ntc) return;
+
+        document.getElementById("water_temp").textContent =
+            ntc.temperature.toFixed(2) + " °C";
+        document.getElementById("water_time").textContent =
+            "Dernière mesure : " + formatLocalTime(ntc.timestamp);
+        updateStatus("ntc_status", ntc.timestamp);
+    }
+
+    /**
+     * loadChart()
+     * Recharge le graphique pour la plage temporelle sélectionnée.
+     * Détruit l'instance Chart.js précédente avant d'en créer une nouvelle
+     * pour éviter les fuites mémoire et les superpositions de canvas.
+     */
+    async function loadChart() {
+        const data  = await fetchRange("arduino_ntc_01", currentRangeHours);
+        currentData = data;
+        if (waterChart) waterChart.destroy();
+        waterChart = createChart(data);
+    }
+
+    // Recharge le graphique quand l'utilisateur change la plage temporelle
+    document.getElementById("water_range_select").addEventListener("change", async function () {
+        currentRangeHours = Number(this.value);
+        await loadChart();
+    });
+
+    // Chargement initial au démarrage de la page
+    refreshValues();
+    loadChart();
+
+    // Rafraîchissement de la valeur courante toutes les 30 secondes
+    setInterval(refreshValues, 30000);
+
+    // Rafraîchissement du graphique toutes les 60 secondes
+    // uniquement si la plage sélectionnée est 24h (plage courante)
+    setInterval(async () => {
+        if (currentRangeHours === 24) await loadChart();
+    }, 60000);
+</script>
+
+<script>
+    /**
+     * toggleMenu() / closeMenu()
+     * Gestion de la sidebar responsive.
+     * Sur mobile (≤ 720px) : sidebar en overlay + fond semi-transparent.
+     * Sur desktop : sidebar rétractable, contenu s'étend en pleine largeur.
+     */
+    function toggleMenu() {
+        const sidebar = document.getElementById("sidebar");
+        const main    = document.querySelector(".main-content");
+        const overlay = document.getElementById("overlay");
+        if (!sidebar || !main || !overlay) return;
+        if (window.innerWidth <= 720) {
+            sidebar.classList.toggle("active");
+            overlay.classList.toggle("active");
+        } else {
+            sidebar.classList.toggle("closed");
+            main.classList.toggle("full");
+        }
+    }
+
+    function closeMenu() {
+        const sidebar = document.getElementById("sidebar");
+        const overlay = document.getElementById("overlay");
+        if (!sidebar || !overlay) return;
+        sidebar.classList.remove("active");
+        overlay.classList.remove("active");
+    }
+
+    // Ferme la sidebar sur mobile après navigation
+    document.querySelectorAll(".sidebar-menu a").forEach(a => {
+        a.addEventListener("click", () => {
+            if (window.innerWidth <= 720) closeMenu();
+        });
+    });
+</script>
+
+</body>
+</html>

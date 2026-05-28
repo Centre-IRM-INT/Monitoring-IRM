@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Alertes – Centre IRM</title>
+
+<!-- Police Inter via Google Fonts — commune à toutes les pages -->
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+
+<!-- Feuille de style commune à toutes les pages du dashboard -->
+<link rel="stylesheet" href="style.css?v=final">
+
+<style>
+/* Grille des cartes d'alerte — une carte par device -->
+.alert-grid { display: grid; gap: 20px; }
+
+/* Bordure orange gauche pour identifier visuellement les cartes d'alerte -->
+.alert-card { border-left: 5px solid #f97316; }
+
+/* Ligne de séparation entre chaque seuil dans une carte -->
+.alert-item { padding: 14px 0; border-bottom: 1px solid #e2e8f0; }
+.alert-item:last-child { border-bottom: none; }
+
+.alert-label { font-weight: 700; }
+.alert-range { color: #64748b; margin-top: 4px; }
+
+/* Badge vert — seuil activé -->
+.alert-enabled {
+    display: inline-block;
+    margin-top: 8px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: #ecfdf5;
+    color: #166534;
+    font-size: 0.85rem;
+    font-weight: 700;
+}
+
+/* Badge rouge — seuil désactivé -->
+.alert-disabled {
+    display: inline-block;
+    margin-top: 8px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: #fef2f2;
+    color: #991b1b;
+    font-size: 0.85rem;
+    font-weight: 700;
+}
+
+/* Encart d'erreur affiché si le JSON des seuils est inaccessible -->
+.error-box {
+    color: #991b1b;
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    padding: 20px;
+    border-radius: 12px;
+}
+</style>
+</head>
+
+<body>
+
+<!-- Bouton pour ouvrir/fermer la sidebar.
+     Sur mobile (≤ 720px) : overlay. Sur desktop : rétractable. -->
+<button class="menu-toggle" onclick="toggleMenu()">☰</button>
+
+<!-- Fond semi-transparent derrière la sidebar sur mobile -->
+<div id="overlay" onclick="closeMenu()"></div>
+
+<div class="app-shell">
+
+    <!-- ─────────────────────────────────────────────
+         SIDEBAR — Navigation latérale
+    ──────────────────────────────────────────────── -->
+    <aside id="sidebar" class="sidebar">
+        <div class="sidebar-brand">
+            <span>IRM Supervision</span>
+            <img src="Logo_IRM.png" alt="Logo IRM">
+        </div>
+
+        <div class="sidebar-section">
+            <div class="sidebar-title"><span>Monitoring</span><span>⌄</span></div>
+            <nav class="sidebar-menu">
+                <a href="index.html"       data-page="index">      <span class="dot"></span><span class="label-text">Vue générale</span></a>
+                <a href="atmosphere.html"  data-page="atmosphere"> <span class="dot"></span><span class="label-text">Atmosphère</span></a>
+                <a href="eaufroide.html"   data-page="eaufroide">  <span class="dot"></span><span class="label-text">Eau glacée</span></a>
+                <a href="compresseur.html" data-page="compresseur"><span class="dot"></span><span class="label-text">Compresseur</span></a>
+                <a href="groupefroid.html" data-page="groupefroid"><span class="dot"></span><span class="label-text">Groupe froid</span></a>
+            </nav>
+        </div>
+
+        <div class="sidebar-section">
+            <div class="sidebar-title"><span>Système</span><span>⌄</span></div>
+            <nav class="sidebar-menu">
+                <!-- Lien actif sur cette page — classe appliquée statiquement -->
+                <a href="alerte.html"      class="active">          <span class="dot"></span><span class="label-text">Alertes</span></a>
+                <a href="datalogging.html" data-page="datalogging"> <span class="dot"></span><span class="label-text">Datalogging</span></a>
+            </nav>
+        </div>
+
+        <div class="sidebar-footer">Plateforme IRM – INT<br>Consultation distante</div>
+    </aside>
+
+    <!-- ─────────────────────────────────────────────
+         CONTENU PRINCIPAL
+    ──────────────────────────────────────────────── -->
+    <main class="main-content">
+
+        <div class="topbar">
+            <div>
+                <h1 class="page-title">Alertes</h1>
+                <div class="page-subtitle">Seuils de supervision</div>
+            </div>
+        </div>
+
+        <div class="container">
+
+            <!-- Carte de configuration des seuils.
+                 Le contenu est injecté dynamiquement par renderSeuils()
+                 à partir du fichier config_seuils.json. -->
+            <div class="card">
+                <h2>Configuration des seuils</h2>
+                <div id="alertes_content">Chargement...</div>
+            </div>
+
+        </div>
+    </main>
+</div>
+
+<script>
+    // Chemin vers le fichier de configuration des seuils d'alerte.
+    // Ce fichier est lu côté client — il doit être accessible depuis le serveur web.
+    // Il est également lu par alerte_manager.py côté serveur pour déclencher les e-mails.
+    const CONFIG_SEUILS_PATH = "config_seuils.json";
+
+    /**
+     * loadSeuils()
+     * Charge le fichier config_seuils.json et injecte le rendu dans la page.
+     * Le paramètre ?v=timestamp force le navigateur à ne pas utiliser le cache,
+     * garantissant que les seuils affichés sont toujours les plus récents.
+     */
+    async function loadSeuils() {
+        const container = document.getElementById("alertes_content");
+
+        try {
+            const response = await fetch(CONFIG_SEUILS_PATH + "?v=" + Date.now());
+            if (!response.ok) throw new Error("HTTP " + response.status);
+
+            const seuils = await response.json();
+            container.innerHTML = renderSeuils(seuils);
+
+        } catch (e) {
+            console.error(e);
+            // Affiche un encart d'erreur si le JSON est absent ou mal formé
+            container.innerHTML = `<div class="error-box">Erreur chargement JSON</div>`;
+        }
+    }
+
+    /**
+     * renderRange(cfg)
+     * Génère le texte décrivant la plage de seuil selon le type de grandeur.
+     *
+     * Deux types supportés :
+     * - "state"  : valeur logique 0/1 (ex: état compresseur) — affiche la valeur attendue
+     * - numérique : affiche les bornes min/max avec unité (ex: "Min : 18 °C | Max : 26 °C")
+     *
+     * @param {object} cfg - configuration d'un seuil depuis config_seuils.json
+     * @returns {string} HTML de la plage
+     */
+    function renderRange(cfg) {
+        if (cfg.unit === "state") {
+            // Grandeur logique : alerte si la valeur diffère de la valeur attendue
+            const expected = cfg.expected ?? 1;
+            const bad      = expected === 1 ? 0 : 1;
+            return `Valeur attendue : ${expected}<br>Alerte si valeur = ${bad}`;
+        }
+
+        // Grandeur numérique : affiche les bornes min/max
+        return `Min : ${cfg.min ?? "--"} ${cfg.unit || ""} | Max : ${cfg.max ?? "--"} ${cfg.unit || ""}`;
+    }
+
+    /**
+     * renderSeuils(seuils)
+     * Génère le HTML complet de la grille des seuils.
+     * Parcourt l'objet JSON par device, puis par grandeur dans chaque device.
+     * Chaque seuil est affiché avec son libellé, sa plage et son statut activé/désactivé.
+     *
+     * Structure attendue du JSON :
+     * {
+     *   "arduino_atmo": {
+     *     "temperature": { "label": "Température", "min": 18, "max": 26, "unit": "°C", "enabled": true },
+     *     ...
+     *   },
+     *   ...
+     * }
+     *
+     * @param {object} seuils - contenu parsé de config_seuils.json
+     * @returns {string} HTML de la grille
+     */
+    function renderSeuils(seuils) {
+        let html = `<div class="alert-grid">`;
+
+        for (const device in seuils) {
+            // Une carte par device avec bordure orange
+            html += `<div class="card alert-card"><h2>${device}</h2>`;
+
+            for (const key in seuils[device]) {
+                const cfg = seuils[device][key];
+
+                html += `
+                    <div class="alert-item">
+                        <div class="alert-label">${cfg.label || key}</div>
+                        <div class="alert-range">${renderRange(cfg)}</div>
+                        <!-- Badge vert si activé, rouge si désactivé -->
+                        <div class="${cfg.enabled ? "alert-enabled" : "alert-disabled"}">
+                            ${cfg.enabled ? "Activée" : "Désactivée"}
+                        </div>
+                    </div>
+                `;
+            }
+
+            html += `</div>`;
+        }
+
+        html += `</div>`;
+        return html;
+    }
+
+    /**
+     * toggleMenu() / closeMenu()
+     * Gestion de la sidebar responsive.
+     * Sur mobile : sidebar en overlay (classe "active").
+     * Note : version simplifiée sans gestion desktop — pas de sidebar rétractable ici.
+     */
+    function toggleMenu() {
+        document.getElementById("sidebar").classList.toggle("active");
+    }
+
+    function closeMenu() {
+        document.getElementById("sidebar").classList.remove("active");
+    }
+
+    // Chargement des seuils au démarrage de la page
+    loadSeuils();
+</script>
+
+</body>
+</html>

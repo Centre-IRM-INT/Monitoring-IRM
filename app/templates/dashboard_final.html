@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Monitoring IRM</title>
+
+  <!--
+    ============================================================
+    DÉPENDANCE EXTERNE : Chart.js
+    ------------------------------------------------------------
+    Chart.js est une librairie JavaScript open-source permettant
+    de tracer des graphiques interactifs dans un <canvas> HTML.
+    Elle est chargée ici via CDN (aucune installation requise).
+    Documentation : https://www.chartjs.org/docs/
+    ============================================================
+  -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    /* --------------------------------------------------------
+       STYLES GLOBAUX
+       --------------------------------------------------------
+       La page utilise une grille de cartes (flex wrap) sur fond
+       gris clair. Chaque capteur / module est représenté par
+       une carte blanche avec ombre portée.
+    -------------------------------------------------------- */
+
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f4f6f8;
+      margin: 0;
+      padding: 20px;
+    }
+
+    h1 {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+
+    /* Conteneur principal : disposition en grille flexible */
+    .container {
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;   /* Les cartes passent à la ligne si l'écran est trop étroit */
+      gap: 20px;
+    }
+
+    /* Carte individuelle d'un module ou capteur */
+    .card {
+      background: white;
+      padding: 20px;
+      border-radius: 12px;
+      width: 340px;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+      position: relative; /* Nécessaire pour positionner le voyant en absolu */
+    }
+
+    /* Nom du capteur / module affiché en en-tête de carte */
+    .device-name {
+      font-weight: bold;
+      font-size: 20px;
+      margin-bottom: 15px;
+    }
+
+    /* Ligne de valeur mesurée (température, humidité…) */
+    .value {
+      font-size: 18px;
+      margin: 10px 0;
+    }
+
+    /* Horodatage de la dernière mesure reçue */
+    .last-seen {
+      font-size: 12px;
+      color: #999;
+      margin-top: 10px;
+    }
+
+    /*
+      Voyant de connectivité (coin supérieur droit de la carte).
+      - gray  : état initial / inconnu
+      - green : données reçues dans les TIMEOUT_MS dernières ms
+      - red   : plus de données depuis TIMEOUT_MS ms
+    */
+    .status {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      width: 15px;
+      height: 15px;
+      border-radius: 50%;
+      background-color: gray;
+    }
+    .status.green { background-color: #00c853; }
+    .status.red   { background-color: #d50000; }
+
+    /*
+      Bouton d'état ON/OFF pour les commandes compresseur.
+      Sa couleur change dynamiquement selon la valeur reçue :
+      - green : valeur = 1  → ON
+      - red   : valeur = 0  → OFF
+      - gray  : valeur inconnue / timeout
+    */
+    .big-state-button {
+      width: 100%;
+      height: 90px;
+      border-radius: 16px;
+      border: none;
+      font-size: 26px;
+      font-weight: bold;
+      color: white;
+      margin-top: 10px;
+    }
+    .big-state-button.green { background-color: #00c853; }
+    .big-state-button.red   { background-color: #d50000; }
+    .big-state-button.gray  { background-color: #9e9e9e; }
+
+    /* Zone réservée au graphique Chart.js dans chaque carte */
+    .chart-box {
+      margin-top: 15px;
+      height: 180px;
+    }
+
+    /* Le canvas occupe tout l'espace disponible dans .chart-box */
+    canvas {
+      width: 100%;
+      height: 100%;
+    }
+  </style>
+</head>
+<body>
+
+<h1>Surveillance Plateforme IRM</h1>
+
+<!--
+  ============================================================
+  STRUCTURE HTML : CARTES DE SURVEILLANCE
+  ------------------------------------------------------------
+    1. Arduino Atmo    → température ambiante, humidité, pression
+    2. Eau glacée      → température du circuit eau froide (NTC)
+    3. Compresseur TF  → état ON/OFF de la commande TF
+    4. Compresseur     → état ON/OFF de la commande principale
+    5. Amplitude       → vibration mesurée sur le compresseur
+  Les <span> avec id sont mis à jour dynamiquement par JS.
+  ============================================================
+-->
+
+<div class="container">
+
+  <!-- -------------------------------------------------- -->
+  <!-- CARTE 1 : Données atmosphériques (Arduino Atmo)     -->
+  <!-- Sources : capteur BME280 branché sur l'arduino_atmo-->
+  <!-- -------------------------------------------------- -->
+  <div class="card">
+    <!-- Voyant vert/rouge selon fraîcheur des données -->
+    <div class="status" id="arduino_atmo_status"></div>
+    <div class="device-name">Arduino Atmo</div>
+
+    <!-- Valeurs mises à jour à chaque message WebSocket -->
+    <div class="value">Température : <span id="arduino_atmo_temp">--</span> °C</div>
+    <div class="value">Humidité : <span id="arduino_atmo_humidity">--</span> %</div>
+    <div class="value">Pression : <span id="arduino_atmo_pressure">--</span> hPa</div>
+
+    <div class="last-seen">Dernière mesure : <span id="arduino_atmo_ts">--</span></div>
+
+    <!-- Graphique linéaire de l'historique température salle (1 h glissante) -->
+    <div class="chart-box"><canvas id="atmoTempChart"></canvas></div>
+  </div>
+
+  <!-- -------------------------------------------------- -->
+  <!-- CARTE 2 : Température eau glacée (Arduino NTC 01)  -->
+  <!-- Source : sonde NTC sur le circuit de refroidissement -->
+  <!-- -------------------------------------------------- -->
+  <div class="card">
+    <div class="status" id="arduino_ntc_01_status"></div>
+    <div class="device-name">Eau glacée</div>
+
+    <div class="value">Température : <span id="arduino_ntc_01_temp">--</span> °C</div>
+    <div class="last-seen">Dernière mesure : <span id="arduino_ntc_01_ts">--</span></div>
+
+    <!-- Graphique linéaire de l'historique température eau (1 h glissante) -->
+    <div class="chart-box"><canvas id="waterTempChart"></canvas></div>
+  </div>
+
+  <!-- -------------------------------------------------- -->
+  <!-- CARTE 3 : Commande Compresseur TF                  -->
+  <!-- Affiche ON (vert) ou OFF (rouge) selon le signal   -->
+  <!-- comptfetat reçu via l'Arduino NTC 01               -->
+  <!-- -------------------------------------------------- -->
+  <div class="card">
+    <div class="status" id="comptfetat_status"></div>
+    <div class="device-name">Commande Compresseur TF</div>
+    <button id="comptfetat_button" class="big-state-button gray">--</button>
+    <div class="last-seen">Dernière mesure : <span id="comptfetat_ts">--</span></div>
+  </div>
+
+  <!-- -------------------------------------------------- -->
+  <!-- CARTE 4 : Commande Compresseur principale          -->
+  <!-- Même logique que la carte TF, champ différent      -->
+  <!-- (commande_compresseur dans le payload JSON)        -->
+  <!-- -------------------------------------------------- -->
+  <div class="card">
+    <div class="status" id="commande_compresseur_status"></div>
+    <div class="device-name">Commande Compresseur</div>
+    <button id="commande_compresseur_button" class="big-state-button gray">--</button>
+    <div class="last-seen">Dernière mesure : <span id="commande_compresseur_ts">--</span></div>
+  </div>
+
+  <!-- -------------------------------------------------- -->
+  <!-- CARTE 5 : Amplitude vibratoire du compresseur      -->
+  <!-- Valeur issue de l'accéléromètre monté sur le       -->
+  <!-- compresseur, transmise avec le payload NTC 01      -->
+  <!-- -------------------------------------------------- -->
+  <div class="card">
+    <div class="status" id="amplitude_status"></div>
+    <div class="device-name">Amplitude vibration compresseur</div>
+    <div class="value">Amplitude : <span id="amplitude_value">--</span></div>
+    <div class="last-seen">Dernière mesure : <span id="amplitude_ts">--</span></div>
+
+    <!-- Graphique linéaire de l'historique amplitude (1 h glissante) -->
+    <div class="chart-box"><canvas id="amplitudeChart"></canvas></div>
+  </div>
+
+</div><!-- fin .container -->
+
+
+<script>
+/* ============================================================
+   TABLEAU DE BORD – MONITORING TEMPS RÉEL IRM
+   ------------------------------------------------------------
+   Ce script gère :
+     1. La persistance locale de l'historique (localStorage)
+     2. L'affichage des voyants de connectivité
+     3. La mise à jour des valeurs affichées
+     4. Les trois graphiques Chart.js (historique glissant 1 h)
+     5. La connexion WebSocket au serveur FastAPI (main.py)
+     6. La détection des timeouts (capteurs muets)
+
+   Architecture de communication :
+     Arduino → [WiFi/LoRa] → FastAPI (main.py) → WebSocket → Ce dashboard
+
+   Format du message WebSocket attendu (JSON) :
+   {
+     "device_id"            : "arduino_atmo" | "arduino_ntc_01",
+     "temperature"          : float,   // °C
+     "humidity"             : float,   // % (atmo seulement)
+     "pressure"             : float,   // hPa (atmo seulement)
+     "comptfetat"           : 0 | 1,   // ntc_01 seulement
+     "commande_compresseur" : 0 | 1,   // ntc_01 seulement
+     "amplitude"            : float    // ntc_01 seulement
+   }
+============================================================ */
+
+
+/* ============================================================
+   1. CONSTANTES DE CONFIGURATION
+   ============================================================ */
+
+/**
+ * Durée (ms) après laquelle un capteur est considéré hors-ligne
+ * si aucune donnée n'a été reçue. Ici : 5 minutes.
+ */
+const TIMEOUT_MS = 5 * 60 * 1000;
+
+/**
+ * Fenêtre temporelle conservée dans l'historique des graphiques.
+ * Les points plus anciens sont supprimés. Ici : 1 heure glissante.
+ */
+const HISTORY_MS = 60 * 60 * 1000;
+
+/**
+ * Nombre maximal de points conservés par historique dans le
+ * localStorage, pour éviter de saturer le stockage navigateur.
+ */
+const MAX_POINTS = 500;
+
+/**
+ * Clés utilisées dans localStorage pour persister les historiques
+ * entre les rechargements de page. Chaque clé stocke un tableau
+ * JSON de la forme [{ time: timestamp_ms, value: float }, ...].
+ */
+const STORAGE_KEYS = {
+  amplitude : "history_amplitude",
+  atmoTemp  : "history_atmo_temp",
+  waterTemp : "history_water_temp",
+};
+
+
+/* ============================================================
+   2. SUIVI DES DERNIÈRES RÉCEPTIONS PAR CAPTEUR
+   ------------------------------------------------------------
+   Chaque entrée contient le timestamp (Date.now()) du dernier
+   message reçu pour ce capteur, ou null si aucun message reçu.
+   Utilisé par refreshStatuses() pour calculer les timeouts.
+   ============================================================ */
+const lastSeen = {
+  arduino_atmo         : null,
+  arduino_ntc_01       : null,
+  comptfetat           : null,
+  commande_compresseur : null,
+  amplitude            : null,
+};
+
+
+/* ============================================================
+   3. GESTION DU LOCALSTORAGE (persistance historiques)
+   ============================================================ */
+
+/**
+ * Charge un historique depuis localStorage.
+ * Retourne un tableau vide si la clé n'existe pas ou si le JSON
+ * est corrompu (protection contre les erreurs de parsing).
+ *
+ * @param {string} key - Clé localStorage (voir STORAGE_KEYS)
+ * @returns {Array}    - Tableau de points { time, value }
+ */
+function loadHistory(key) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+/**
+ * Sauvegarde un historique dans localStorage.
+ * Tronque à MAX_POINTS pour limiter l'espace utilisé.
+ *
+ * @param {string} key - Clé localStorage
+ * @param {Array}  arr - Tableau de points à sauvegarder
+ */
+function saveHistory(key, arr) {
+  try {
+    localStorage.setItem(key, JSON.stringify(arr.slice(-MAX_POINTS)));
+  } catch (e) {
+    /* Silencieux : peut échouer si le quota localStorage est dépassé */
+  }
+}
+
+/**
+ * Supprime les points antérieurs à la fenêtre HISTORY_MS.
+ * Appelé avant chaque mise à jour de graphique pour maintenir
+ * la fenêtre glissante d'une heure.
+ *
+ * @param {Array} arr - Tableau de points { time, value }
+ * @returns {Array}   - Tableau filtré
+ */
+function pruneHistory(arr) {
+  const now = Date.now();
+  return arr.filter(p => now - p.time <= HISTORY_MS);
+}
+
+/* Chargement initial des historiques depuis localStorage,
+   avec pruning immédiat pour ignorer les vieux points. */
+let amplitudeHistory = pruneHistory(loadHistory(STORAGE_KEYS.amplitude));
+let atmoTempHistory  = pruneHistory(loadHistory(STORAGE_KEYS.atmoTemp));
+let waterTempHistory = pruneHistory(loadHistory(STORAGE_KEYS.waterTemp));
+
+
+/* ============================================================
+   4. FONCTIONS D'AFFICHAGE COMMUNES
+   ============================================================ */
+
+/**
+ * Met à jour la couleur du voyant de connectivité d'un capteur.
+ *
+ * @param {string}  id     - Identifiant du capteur (ex: "arduino_atmo")
+ * @param {boolean} online - true → vert, false → rouge
+ */
+function setStatus(id, online) {
+  const el = document.getElementById(id + "_status");
+  if (el) el.className = online ? "status green" : "status red";
+}
+
+/**
+ * Affiche l'horodatage de la dernière mesure reçue (format HH:MM:SS).
+ *
+ * @param {string}      id - Identifiant du capteur
+ * @param {number|null} ts - Timestamp en ms (Date.now()), ou null
+ */
+function setTimestamp(id, ts) {
+  const el = document.getElementById(id + "_ts");
+  if (!el) return;
+  if (!ts) { el.innerText = "--"; return; }
+  el.innerText = new Date(ts).toLocaleTimeString("fr-FR", {
+    hour: "2-digit", minute: "2-digit", second: "2-digit"
+  });
+}
+
+/**
+ * Met à jour l'apparence et le texte d'un bouton ON/OFF.
+ * Utilisé pour les commandes compresseur (TF et principale).
+ *
+ * @param {string}      id    - Identifiant du bouton (ex: "comptfetat")
+ * @param {number|null} value - 1 → ON (vert), 0 → OFF (rouge), autre → gris
+ */
+function updateButton(id, value) {
+  const btn = document.getElementById(id + "_button");
+  if (!btn) return;
+  if (value === 1)      { btn.className = "big-state-button green"; btn.innerText = "ON";  }
+  else if (value === 0) { btn.className = "big-state-button red";   btn.innerText = "OFF"; }
+  else                  { btn.className = "big-state-button gray";  btn.innerText = "--";  }
+}
+
+
+/* ============================================================
+   5. GRAPHIQUES CHART.JS
+   ------------------------------------------------------------
+   Trois graphiques linéaires identiques en structure :
+     - amplitudeChart  : amplitude vibratoire du compresseur
+     - atmoTempChart   : température ambiante de la salle IRM
+     - waterTempChart  : température du circuit eau glacée
+
+   Paramètres communs :
+     - Fenêtre glissante d'1 heure (HISTORY_MS)
+     - Pas d'animation pour fluidifier les mises à jour temps réel
+     - Échelle Y automatique (beginAtZero: false)
+     - Maximum 6 étiquettes sur l'axe X (lisibilité)
+   ============================================================ */
+
+/* --- 5a. Graphique amplitude vibratoire --- */
+const amplitudeChart = new Chart(
+  document.getElementById("amplitudeChart").getContext("2d"),
+  {
+    type: "line",
+    data: {
+      labels: [],
+      datasets: [{
+        label: "Amplitude",
+        data: [],
+        borderColor: "#1565C0",
+        backgroundColor: "rgba(21,101,192,0.08)",
+        borderWidth: 2,
+        pointRadius: 1,
+        tension: 0.25,  // Courbe légèrement lissée (0 = droite, 1 = très lissée)
+        fill: true
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,   // Désactivé pour les mises à jour haute fréquence
+      scales: {
+        x: { ticks: { maxTicksLimit: 6 } },
+        y: { beginAtZero: false }  // Échelle auto : zoom sur la plage réelle
+      },
+      plugins: { legend: { display: false } }
+    }
+  }
+);
+
+/**
+ * Met à jour le graphique d'amplitude avec les données récentes.
+ * Effectue le pruning de la fenêtre glissante avant chaque rendu,
+ * puis sauvegarde l'historique dans localStorage.
+ */
+function updateAmplitudeChart() {
+  amplitudeHistory = pruneHistory(amplitudeHistory);
+  saveHistory(STORAGE_KEYS.amplitude, amplitudeHistory);
+
+  amplitudeChart.data.labels = amplitudeHistory.map(p =>
+    new Date(p.time).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })
+  );
+  amplitudeChart.data.datasets[0].data = amplitudeHistory.map(p => p.value);
+  amplitudeChart.update();
+}
+
+/* --- 5b. Graphique température atmosphérique --- */
+const atmoTempChart = new Chart(
+  document.getElementById("atmoTempChart").getContext("2d"),
+  {
+    type: "line",
+    data: {
+      labels: [],
+      datasets: [{
+        label: "Température salle",
+        data: [],
+        borderColor: "#e53935",
+        backgroundColor: "rgba(229,57,53,0.08)",
+        borderWidth: 2,
+        pointRadius: 1,
+        tension: 0.25,
+        fill: true
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      scales: {
+        x: { ticks: { maxTicksLimit: 6 } },
+        y: { beginAtZero: false }
+      },
+      plugins: { legend: { display: false } }
+    }
+  }
+);
+
+/**
+ * Met à jour le graphique de température ambiante.
+ * Même logique que updateAmplitudeChart().
+ */
+function updateAtmoTempChart() {
+  atmoTempHistory = pruneHistory(atmoTempHistory);
+  saveHistory(STORAGE_KEYS.atmoTemp, atmoTempHistory);
+
+  atmoTempChart.data.labels = atmoTempHistory.map(p =>
+    new Date(p.time).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })
+  );
+  atmoTempChart.data.datasets[0].data = atmoTempHistory.map(p => p.value);
+  atmoTempChart.update();
+}
+
+/* --- 5c. Graphique température eau glacée --- */
+const waterTempChart = new Chart(
+  document.getElementById("waterTempChart").getContext("2d"),
+  {
+    type: "line",
+    data: {
+      labels: [],
+      datasets: [{
+        label: "Température eau",
+        data: [],
+        borderColor: "#00838F",
+        backgroundColor: "rgba(0,131,143,0.08)",
+        borderWidth: 2,
+        pointRadius: 1,
+        tension: 0.25,
+        fill: true
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      scales: {
+        x: { ticks: { maxTicksLimit: 6 } },
+        y: { beginAtZero: false }
+      },
+      plugins: { legend: { display: false } }
+    }
+  }
+);
+
+/**
+ * Met à jour le graphique de température eau glacée.
+ * Même logique que updateAmplitudeChart().
+ */
+function updateWaterTempChart() {
+  waterTempHistory = pruneHistory(waterTempHistory);
+  saveHistory(STORAGE_KEYS.waterTemp, waterTempHistory);
+
+  waterTempChart.data.labels = waterTempHistory.map(p =>
+    new Date(p.time).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })
+  );
+  waterTempChart.data.datasets[0].data = waterTempHistory.map(p => p.value);
+  waterTempChart.update();
+}
+
+
+/* ============================================================
+   6. CONNEXION WEBSOCKET ET TRAITEMENT DES DONNÉES
+   ------------------------------------------------------------
+   Le dashboard se connecte au endpoint /ws du serveur FastAPI
+   défini dans main.py (classe ConnectionManager).
+   L'URL est construite dynamiquement depuis window.location.host
+   pour fonctionner sans reconfiguration (localhost ou IP réseau).
+
+   En cas de déconnexion, une tentative de reconnexion automatique
+   est effectuée toutes les 2 secondes.
+   ============================================================ */
+
+/**
+ * Établit la connexion WebSocket et enregistre les gestionnaires
+ * d'événements. S'appelle elle-même récursivement après fermeture
+ * pour assurer la reconnexion automatique.
+ */
+function connectWebSocket() {
+  /*
+    Construction de l'URL WebSocket :
+    - window.location.host retourne "host:port" (ex: "192.168.1.10:8000")
+    - Le préfixe ws:// suppose une connexion non chiffrée (LAN local)
+    - Pour HTTPS/production, remplacer par wss://
+  */
+  const socket = new WebSocket("ws://" + window.location.host + "/ws");
+
+  /* ----------------------------------------------------------
+     Réception d'un message JSON depuis le serveur FastAPI
+     ----------------------------------------------------------
+     Chaque message correspond à une mesure d'un capteur.
+     Le champ device_id détermine quel bloc de mise à jour exécuter.
+  ---------------------------------------------------------- */
+  socket.onmessage = function(event) {
+    const data = JSON.parse(event.data);
+    const now  = Date.now();
+
+    /* ---- Bloc Arduino Atmo (device_id = "arduino_atmo") ---- */
+    if (data.device_id === "arduino_atmo") {
+      /* Mise à jour du suivi de connectivité */
+      lastSeen.arduino_atmo = now;
+      setStatus("arduino_atmo", true);
+      setTimestamp("arduino_atmo", now);
+
+      /* Température ambiante */
+      if (data.temperature != null) {
+        const tAtmo = Number(data.temperature);
+        document.getElementById("arduino_atmo_temp").innerText = tAtmo.toFixed(2);
+        atmoTempHistory.push({ time: now, value: tAtmo });
+        updateAtmoTempChart();
+      }
+
+      /* Humidité relative */
+      if (data.humidity != null)
+        document.getElementById("arduino_atmo_humidity").innerText =
+          Number(data.humidity).toFixed(2);
+
+      /* Pression atmosphérique */
+      if (data.pressure != null)
+        document.getElementById("arduino_atmo_pressure").innerText =
+          Number(data.pressure).toFixed(2);
+    }
+
+    /* ---- Bloc Arduino NTC 01 (device_id = "arduino_ntc_01") ----
+       Ce capteur transmet plusieurs informations dans un seul payload :
+         - temperature : température du circuit eau glacée
+         - comptfetat  : état de la commande compresseur TF (0/1)
+         - commande_compresseur : état commande compresseur principale (0/1)
+         - amplitude   : vibration mesurée sur le compresseur
+    ------------------------------------------------------------ */
+    if (data.device_id === "arduino_ntc_01") {
+      lastSeen.arduino_ntc_01 = now;
+      setStatus("arduino_ntc_01", true);
+      setTimestamp("arduino_ntc_01", now);
+
+      /* Température eau glacée */
+      if (data.temperature != null) {
+        const tWater = Number(data.temperature);
+        document.getElementById("arduino_ntc_01_temp").innerText = tWater.toFixed(2);
+        waterTempHistory.push({ time: now, value: tWater });
+        updateWaterTempChart();
+      }
+
+      /* État commande compresseur TF
+         Présent uniquement si le champ existe dans le payload.
+         !== undefined permet de différencier 0 (OFF) de champ absent. */
+      if (data.comptfetat !== undefined) {
+        lastSeen.comptfetat = now;
+        setStatus("comptfetat", true);
+        setTimestamp("comptfetat", now);
+        updateButton("comptfetat", Number(data.comptfetat));
+      }
+
+      /* État commande compresseur principale */
+      if (data.commande_compresseur !== undefined) {
+        lastSeen.commande_compresseur = now;
+        setStatus("commande_compresseur", true);
+        setTimestamp("commande_compresseur", now);
+        updateButton("commande_compresseur", Number(data.commande_compresseur));
+      }
+
+      /* Amplitude vibratoire du compresseur */
+      if (data.amplitude != null) {
+        lastSeen.amplitude = now;
+        setStatus("amplitude", true);
+        setTimestamp("amplitude", now);
+
+        const amplitude = Number(data.amplitude);
+        document.getElementById("amplitude_value").innerText = amplitude.toFixed(2);
+
+        amplitudeHistory.push({ time: now, value: amplitude });
+        updateAmplitudeChart();
+      }
+    }
+  };
+
+  /* ----------------------------------------------------------
+     Gestion de la fermeture de connexion WebSocket
+     ----------------------------------------------------------
+     Tous les voyants passent au rouge, puis une reconnexion
+     est tentée après 2 secondes. Ce délai évite de surcharger
+     le serveur en cas de redémarrage ou panne réseau.
+  ---------------------------------------------------------- */
+  socket.onclose = () => {
+    Object.keys(lastSeen).forEach(k => setStatus(k, false));
+    setTimeout(connectWebSocket, 2000);
+  };
+
+  /* En cas d'erreur, on ferme proprement (onclose sera appelé) */
+  socket.onerror = () => { socket.close(); };
+}
+
+/* Lancement de la connexion WebSocket au chargement de la page */
+connectWebSocket();
+
+
+/* ============================================================
+   7. BOUCLE DE VÉRIFICATION DES TIMEOUTS (toutes les 5 s)
+   ------------------------------------------------------------
+   Même sans nouvelles données, on vérifie périodiquement si
+   les capteurs sont encore considérés comme actifs.
+   Un capteur dont le dernier message date de plus de TIMEOUT_MS
+   est marqué hors-ligne (voyant rouge) et ses valeurs sont
+   remises à "--" pour ne pas induire en erreur l'opérateur.
+   ============================================================ */
+
+/**
+ * Vérifie l'état de connectivité de chaque capteur et remet
+ * à "--" les valeurs des modules en timeout.
+ * Également appelé pour forcer le pruning des graphiques.
+ */
+function refreshStatuses() {
+  const now = Date.now();
+
+  /* Mise à jour des voyants selon le délai depuis le dernier message */
+  for (const key in lastSeen) {
+    const t = lastSeen[key];
+    setStatus(key, t !== null && (now - t) <= TIMEOUT_MS);
+  }
+
+  /* Remise à "--" des boutons compresseur si données expirées */
+  if (!lastSeen.comptfetat || now - lastSeen.comptfetat > TIMEOUT_MS)
+    updateButton("comptfetat", null);
+
+  if (!lastSeen.commande_compresseur || now - lastSeen.commande_compresseur > TIMEOUT_MS)
+    updateButton("commande_compresseur", null);
+
+  /* Remise à "--" de l'amplitude si données expirées */
+  if (!lastSeen.amplitude || now - lastSeen.amplitude > TIMEOUT_MS) {
+    setStatus("amplitude", false);
+    document.getElementById("amplitude_value").innerText = "--";
+  }
+
+  /* Pruning et re-rendu des graphiques même sans nouvelles données
+     (permet de faire glisser la fenêtre temporelle visuellement) */
+  updateAmplitudeChart();
+  updateAtmoTempChart();
+  updateWaterTempChart();
+}
+
+/* Lancement de la boucle de vérification toutes les 5 secondes */
+setInterval(refreshStatuses, 5000);
+
+/* Premier rendu des graphiques depuis l'historique localStorage */
+updateAmplitudeChart();
+updateAtmoTempChart();
+updateWaterTempChart();
+
+</script>
+</body>
+</html>

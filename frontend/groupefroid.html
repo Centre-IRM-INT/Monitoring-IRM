@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Données Groupe Froid</title>
+
+<!-- Police Inter via Google Fonts — commune à toutes les pages -->
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+
+<!-- Feuille de style commune à toutes les pages du dashboard -->
+<link rel="stylesheet" href="style.css?v=final">
+
+<style>
+.card { position: relative; text-align: center; }
+
+/* Badge coloré (● vert/rouge) indiquant si la donnée est récente ou non -->
+.status-badge {
+    position: absolute;
+    top: 20px;
+    right: 25px;
+    font-size: 1.4rem;
+}
+
+/* Grille des deux voyants côte à côte -->
+.voyants-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 32px;
+    margin: 32px auto;
+    max-width: 420px;
+}
+
+.voyant-block {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+}
+
+.voyant-label {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #64748b;
+}
+
+/* Voyant circulaire ON/OFF — classes .on / .off appliquées dynamiquement -->
+.voyant {
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    background: gray;
+    transition: all 0.3s ease;
+}
+
+/* Groupe froid actif — vert avec halo lumineux -->
+.on {
+    background: #22c55e;
+    box-shadow: 0 0 40px rgba(34,197,94,0.8);
+}
+
+/* Groupe froid inactif — rouge avec halo lumineux -->
+.off {
+    background: #ef4444;
+    box-shadow: 0 0 40px rgba(239,68,68,0.8);
+}
+
+.state-text {
+    font-size: 1.2rem;
+    font-weight: 600;
+}
+
+@media (max-width: 480px) {
+    .voyants-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+
+<body>
+
+<!-- Bouton pour ouvrir/fermer la sidebar.
+     Sur mobile (≤ 720px) : ouvre la sidebar en overlay.
+     Sur desktop : rétracte la sidebar pour agrandir le contenu. -->
+<button class="menu-toggle" type="button" aria-label="Ouvrir le menu" onclick="toggleMenu()">☰</button>
+
+<!-- Fond semi-transparent affiché derrière la sidebar sur mobile -->
+<div id="overlay" onclick="closeMenu()"></div>
+
+<!-- Structure principale : sidebar fixe à gauche + contenu à droite -->
+<div class="app-shell">
+
+    <!-- ─────────────────────────────────────────────
+         SIDEBAR — Navigation latérale
+    ──────────────────────────────────────────────── -->
+    <aside id="sidebar" class="sidebar">
+
+        <div class="sidebar-brand">
+            <span>IRM Supervision</span>
+            <img src="Logo_IRM.png" alt="Logo IRM">
+        </div>
+
+        <div class="sidebar-section">
+            <div class="sidebar-title"><span>Monitoring</span><span>⌄</span></div>
+            <nav class="sidebar-menu">
+                <a href="index.html"       data-page="index">      <span class="dot"></span><span class="label-text">Vue générale</span></a>
+                <a href="atmosphere.html"  data-page="atmosphere"> <span class="dot"></span><span class="label-text">Atmosphère</span></a>
+                <a href="eaufroide.html"   data-page="eaufroide">  <span class="dot"></span><span class="label-text">Eau glacée</span></a>
+                <a href="compresseur.html" data-page="compresseur"><span class="dot"></span><span class="label-text">Compresseur</span></a>
+                <a href="groupefroid.html" data-page="groupefroid"><span class="dot"></span><span class="label-text">Groupe froid</span></a>
+            </nav>
+        </div>
+
+        <div class="sidebar-section">
+            <div class="sidebar-title"><span>Système</span><span>⌄</span></div>
+            <nav class="sidebar-menu">
+                <a href="alerte.html"      data-page="alerte">     <span class="dot"></span><span class="label-text">Alertes</span></a>
+                <a href="datalogging.html" data-page="datalogging"><span class="dot"></span><span class="label-text">Datalogging</span></a>
+            </nav>
+        </div>
+
+        <div class="sidebar-footer">Plateforme IRM – INT<br>Consultation distante</div>
+
+    </aside>
+
+    <!-- ─────────────────────────────────────────────
+         CONTENU PRINCIPAL
+    ──────────────────────────────────────────────── -->
+    <main class="main-content">
+
+        <div class="topbar">
+            <div>
+                <h1 class="page-title">Groupe froid</h1>
+                <div class="page-subtitle">État de fonctionnement des groupes froids</div>
+            </div>
+            <div class="topbar-actions">
+                <span class="badge-soft">Supabase REST</span>
+                <span class="badge-soft">Lecture seule</span>
+            </div>
+        </div>
+
+        <div class="container">
+
+            <!-- Carte groupe froid — arduino_groupe_froid
+                 Deux voyants côte à côte pour etat_gf_1 et etat_gf_2
+                 lus depuis le même device dans Supabase. -->
+            <div class="card">
+                <h2>Arduino Groupe Froid</h2>
+
+                <!-- Badge ● coloré : vert si mesure < 2 min, rouge sinon -->
+                <div id="gf_status" class="status-badge">●</div>
+
+                <!-- Grille des deux voyants -->
+                <div class="voyants-grid">
+
+                    <!-- Voyant Groupe Froid 1 — champ etat_gf_1 -->
+                    <div class="voyant-block">
+                        <div class="voyant-label">Groupe Froid 1</div>
+                        <div id="voyant_1" class="voyant"></div>
+                        <div id="gf_state_1" class="state-text">--</div>
+                    </div>
+
+                    <!-- Voyant Groupe Froid 2 — champ etat_gf_2 -->
+                    <div class="voyant-block">
+                        <div class="voyant-label">Groupe Froid 2</div>
+                        <div id="voyant_2" class="voyant"></div>
+                        <div id="gf_state_2" class="state-text">--</div>
+                    </div>
+
+                </div>
+
+                <!-- Horodatage de la dernière mesure reçue -->
+                <div class="timestamp" id="gf_time"></div>
+            </div>
+
+        </div>
+    </main>
+</div>
+
+<!-- Marque le lien "Groupe froid" comme actif dans la sidebar -->
+<script>document.querySelector('[data-page="groupefroid"]').classList.add('active');</script>
+
+<script>
+    // ── Connexion Supabase ────────────────────────────────────────────
+    // Clé publique (publishable) — lecture seule, sans risque d'exposition.
+    const SUPABASE_URL = "https://xkqizqpflgcmyiqluuie.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_87i8-j5iiLISsoBSBvC7ng_RlE5TPrr";
+
+    /**
+     * formatLocalTime(utcString)
+     * Convertit un timestamp UTC (stocké dans Supabase) en heure locale
+     * française au format JJ/MM/AAAA HH:MM.
+     */
+    function formatLocalTime(utcString) {
+        const date = new Date(utcString);
+        return date.toLocaleString("fr-FR", {
+            timeZone: "Europe/Paris",
+            year:     "numeric",
+            month:    "2-digit",
+            day:      "2-digit",
+            hour:     "2-digit",
+            minute:   "2-digit",
+            hour12:   false
+        });
+    }
+
+    /**
+     * updateStatus(badgeId, timestamp)
+     * Met à jour la couleur du badge ● selon la fraîcheur de la donnée.
+     * Vert si la dernière mesure date de moins de 2 minutes, rouge sinon.
+     */
+    function updateStatus(badgeId, timestamp) {
+        const diffMinutes = (new Date() - new Date(timestamp)) / 1000 / 60;
+        const badge = document.getElementById(badgeId);
+        badge.style.color = diffMinutes <= 2 ? "#22c55e" : "#ef4444";
+    }
+
+    /**
+     * setVoyant(voyantId, stateId, value)
+     * Met à jour un voyant et son texte d'état selon la valeur reçue (0 ou 1).
+     *
+     * @param {string} voyantId - id du div voyant (voyant_1 ou voyant_2)
+     * @param {string} stateId  - id du div texte (gf_state_1 ou gf_state_2)
+     * @param {number} value    - valeur du champ etat_gf_1 ou etat_gf_2 (0/1)
+     */
+    function setVoyant(voyantId, stateId, value) {
+        const voyant = document.getElementById(voyantId);
+        const text   = document.getElementById(stateId);
+
+        if (value === 1) {
+            voyant.classList.remove("off");
+            voyant.classList.add("on");
+            text.textContent = "ON";
+        } else {
+            voyant.classList.remove("on");
+            voyant.classList.add("off");
+            text.textContent = "OFF";
+        }
+    }
+
+    /**
+     * fetchLatest()
+     * Récupère la mesure la plus récente de l'arduino_groupe_froid
+     * depuis Supabase via l'API REST.
+     * Les deux champs etat_gf_1 et etat_gf_2 sont dans le même enregistrement.
+     */
+    async function fetchLatest() {
+        const response = await fetch(
+            `${SUPABASE_URL}/rest/v1/measurements?device_id=eq.arduino_groupe_froid&order=timestamp.desc&limit=1`,
+            {
+                headers: {
+                    "apikey":        SUPABASE_KEY,
+                    "Authorization": `Bearer ${SUPABASE_KEY}`
+                }
+            }
+        );
+        const data = await response.json();
+        return data[0];
+    }
+
+    /**
+     * refresh()
+     * Récupère la dernière mesure et met à jour les deux voyants,
+     * l'horodatage et le badge de fraîcheur.
+     */
+    async function refresh() {
+        const data = await fetchLatest();
+        if (!data) return;
+
+        setVoyant("voyant_1", "gf_state_1", data.etat_gf_1);
+        setVoyant("voyant_2", "gf_state_2", data.etat_gf_2);
+
+        document.getElementById("gf_time").textContent =
+            "Dernière mesure : " + formatLocalTime(data.timestamp);
+
+        updateStatus("gf_status", data.timestamp);
+    }
+
+    // Chargement initial au démarrage de la page
+    refresh();
+
+    // Rafraîchissement automatique toutes les 30 secondes
+    setInterval(refresh, 30000);
+</script>
+
+<script>
+    /**
+     * toggleMenu() / closeMenu()
+     * Gestion de la sidebar responsive.
+     * Sur mobile (≤ 720px) : sidebar en overlay.
+     * Sur desktop : sidebar rétractable.
+     */
+    function toggleMenu() {
+        const sidebar = document.getElementById("sidebar");
+        const main    = document.querySelector(".main-content");
+        const overlay = document.getElementById("overlay");
+        if (!sidebar || !main || !overlay) return;
+        if (window.innerWidth <= 720) {
+            sidebar.classList.toggle("active");
+            overlay.classList.toggle("active");
+        } else {
+            sidebar.classList.toggle("closed");
+            main.classList.toggle("full");
+        }
+    }
+
+    function closeMenu() {
+        const sidebar = document.getElementById("sidebar");
+        const overlay = document.getElementById("overlay");
+        if (!sidebar || !overlay) return;
+        sidebar.classList.remove("active");
+        overlay.classList.remove("active");
+    }
+
+    // Ferme la sidebar sur mobile après navigation
+    document.querySelectorAll(".sidebar-menu a").forEach(a => {
+        a.addEventListener("click", () => {
+            if (window.innerWidth <= 720) closeMenu();
+        });
+    });
+</script>
+
+</body>
+</html>

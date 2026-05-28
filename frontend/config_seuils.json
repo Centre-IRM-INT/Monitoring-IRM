@@ -1,0 +1,79 @@
+{
+  "arduino_atmo": {
+    "temperature": {
+      "min": 12.0,
+      "max": 26.0,
+      "unit": "C",
+      "enabled": false,
+      "label": "Temperature salle IRM",
+      "message_low": "Alerte temperature salle IRM trop basse. Veuillez verifier.",
+      "message_high": "Alerte temperature salle IRM trop elevee. Veuillez verifier."
+    },
+    "humidity": {
+      "min": 20.0,
+      "max": 80.0,
+      "unit": "%",
+      "enabled": true,
+      "label": "Humidite salle IRM",
+      "message_low": "Alerte humidite salle IRM trop basse. Veuillez verifier.",
+      "message_high": "Alerte humidite salle IRM trop elevee. Veuillez verifier."
+    },
+    "pressure": {
+      "min": 950.0,
+      "max": 1050.0,
+      "unit": "hPa",
+      "enabled": true,
+      "label": "Pression salle IRM",
+      "message_low": "Alerte pression salle IRM trop basse. Veuillez verifier.",
+      "message_high": "Alerte pression salle IRM trop elevee. Veuillez verifier."
+    }
+  },
+  "arduino_ntc_01": {
+    "temperature": {
+      "min": 5.0,
+      "max": 15.0,
+      "unit": "C",
+      "enabled": true,
+      "label": "Temperature eau glacee",
+      "message_low": "Alerte eau glacee trop basse. Veuillez verifier le circuit d eau glacee.",
+      "message_high": "Alerte eau glacee trop elevee. Veuillez verifier le circuit d eau glacee."
+    },
+	"amplitude": {
+	  "min": 40,
+	  "max": 120.0,
+	  "unit": "RMS",
+	  "enabled": true,
+	  "label": "Vibration compresseur",
+	  "message_low": "Alerte vibration compresseur trop faible. Veuillez verifier si le compresseur est arrete ou si le capteur ne mesure plus correctement.",
+	  "message_high": "Alerte vibration compresseur trop elevee. Veuillez verifier le compresseur."
+	},
+    "comptfetat": {
+      "expected": [1],
+      "unit": "state",
+      "enabled": true,
+      "label": "Etat compresseur TF",
+      "message_expected": "Alerte etat compresseur TF incorrect. La valeur attendue est 1."
+    },
+    "commande_compresseur": {
+      "expected": [1],
+      "unit": "state",
+      "enabled": true,
+      "label": "Commande compresseur",
+      "message_expected": "Alerte commande compresseur incorrecte. La valeur attendue est 1."
+    }
+  },
+  "arduino_groupe_froid": {
+    "etat_gf": {
+      "expected": [1],
+      "unit": "state",
+      "enabled": true,
+      "label": "Etat groupe froid",
+      "message_expected": "Alerte groupe froid arrete ou etat incorrect. La valeur attendue est 1."
+    }
+  },
+  "watchdog": {
+    "delai_alerte_minutes": 15,
+    "rappels_minutes": [30],
+    "rappel_horaire_apres_minutes": 60
+	}
+}

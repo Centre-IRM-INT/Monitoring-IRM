@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Données Compresseur</title>
+
+<!-- Police Inter via Google Fonts — commune à toutes les pages -->
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+
+<!-- Feuille de style commune à toutes les pages du dashboard -->
+<link rel="stylesheet" href="style.css?v=final">
+
+<!-- Chart.js — bibliothèque de tracé de graphiques -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<!-- Hammer.js — gestion des gestes tactiles (requis par chartjs-plugin-zoom) -->
+<script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8"></script>
+
+<!-- Plugin zoom/pan pour Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1"></script>
+
+<style>
+/* Badge ● de fraîcheur positionné en haut à droite de chaque carte */
+.status-badge {
+    position: absolute;
+    top: 20px;
+    right: 25px;
+    font-size: 1.4rem;
+}
+
+/* Voyant circulaire ON / OFF / inconnu pour les états logiques.
+   Trois variantes de couleur : .on (vert), .off (rouge), .unknown (gris) */
+.state-indicator {
+    width: 90px;
+    height: 90px;
+    border-radius: 50%;
+    margin: 24px auto 14px auto;
+    background-color: #64748b;
+    box-shadow: 0 0 14px rgba(100,116,139,0.35);
+    transition: all 0.3s ease;
+}
+.state-indicator.on      { background-color: #22c55e; box-shadow: 0 0 22px rgba(34,197,94,0.65); }
+.state-indicator.off     { background-color: #ef4444; box-shadow: 0 0 22px rgba(239,68,68,0.65); }
+.state-indicator.unknown { background-color: #94a3b8; box-shadow: 0 0 20px rgba(148,163,184,0.45); }
+
+.state-text    { text-align: center; font-size: 1.15rem; font-weight: 700; margin-top: 8px; color: #334155; }
+.state-subtext { text-align: center; font-size: 0.95rem; color: #94a3b8; margin-top: 6px; min-height: 20px; }
+
+/* Barre de contrôles du graphique vibration */
+.chart-controls {
+    margin-top: 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+.chart-controls label { color: var(--text); font-weight: 600; }
+.chart-controls select,
+.chart-controls button {
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    color: var(--text);
+    font-size: 0.95rem;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+.chart-controls button:hover,
+.chart-controls select:hover { background: var(--border); }
+
+.info-note { margin-top: 8px; color: #94a3b8; font-size: 0.92rem; }
+</style>
+</head>
+
+<body>
+
+<!-- Bouton pour ouvrir/fermer la sidebar.
+     Sur mobile (≤ 720px) : overlay. Sur desktop : rétractable. -->
+<button class="menu-toggle" type="button" aria-label="Ouvrir le menu" onclick="toggleMenu()">☰</button>
+
+<!-- Fond semi-transparent derrière la sidebar sur mobile -->
+<div id="overlay" onclick="closeMenu()"></div>
+
+<div class="app-shell">
+
+    <!-- ─────────────────────────────────────────────
+         SIDEBAR — Navigation latérale
+    ──────────────────────────────────────────────── -->
+    <aside id="sidebar" class="sidebar">
+        <div class="sidebar-brand">
+            <span>IRM Supervision</span>
+            <img src="Logo_IRM.png" alt="Logo IRM">
+        </div>
+        <div class="sidebar-section">
+            <div class="sidebar-title"><span>Monitoring</span><span>⌄</span></div>
+            <nav class="sidebar-menu">
+                <a href="index.html"       data-page="index">      <span class="dot"></span><span class="label-text">Vue générale</span></a>
+                <a href="atmosphere.html"  data-page="atmosphere"> <span class="dot"></span><span class="label-text">Atmosphère</span></a>
+                <a href="eaufroide.html"   data-page="eaufroide">  <span class="dot"></span><span class="label-text">Eau glacée</span></a>
+                <a href="compresseur.html" data-page="compresseur"><span class="dot"></span><span class="label-text">Compresseur</span></a>
+                <a href="groupefroid.html" data-page="groupefroid"><span class="dot"></span><span class="label-text">Groupe froid</span></a>
+            </nav>
+        </div>
+        <div class="sidebar-section">
+            <div class="sidebar-title"><span>Système</span><span>⌄</span></div>
+            <nav class="sidebar-menu">
+                <a href="alerte.html"      data-page="alerte">     <span class="dot"></span><span class="label-text">Alertes</span></a>
+                <a href="datalogging.html" data-page="datalogging"><span class="dot"></span><span class="label-text">Datalogging</span></a>
+            </nav>
+        </div>
+        <div class="sidebar-footer">Plateforme IRM – INT<br>Consultation distante</div>
+    </aside>
+
+    <!-- ─────────────────────────────────────────────
+         CONTENU PRINCIPAL
+    ──────────────────────────────────────────────── -->
+    <main class="main-content">
+
+        <div class="topbar">
+            <div>
+                <h1 class="page-title">Données compresseur</h1>
+                <div class="page-subtitle">Amplitude vibratoire, état de fonctionnement et commande compresseur</div>
+            </div>
+            <div class="topbar-actions">
+                <span class="badge-soft">Supabase REST</span>
+                <span class="badge-soft">Lecture seule</span>
+            </div>
+        </div>
+
+        <div class="container">
+
+            <!-- Carte 1 : Vibration compresseur — arduino_ntc_01 (champ amplitude)
+                 Affiche la valeur RMS courante + graphique historique avec zoom. -->
+            <div class="card">
+                <h2>Vibration compresseur</h2>
+                <div id="comp_status" class="status-badge">●</div>
+
+                <!-- Valeur RMS courante de l'amplitude vibratoire -->
+                <div class="value" id="comp_amp">--</div>
+                <div class="timestamp" id="comp_time"></div>
+
+                <!-- Contrôles du graphique : sélecteur de plage + boutons zoom -->
+                <div class="chart-controls">
+                    <label for="comp_range_select">Plage :</label>
+                    <select id="comp_range_select">
+                        <option value="24">24 h</option>
+                        <option value="48">48 h</option>
+                        <option value="72">3 jours</option>
+                        <option value="96">4 jours</option>
+                    </select>
+                    <button onclick="zoomIn()">Zoom X +</button>
+                    <button onclick="zoomOut()">Zoom X -</button>
+                    <button onclick="zoomYIn()">Zoom Y +</button>
+                    <button onclick="zoomYOut()">Zoom Y -</button>
+                    <button onclick="resetZoom()">Réinitialiser zoom</button>
+                </div>
+                <div class="info-note">Clic maintenu + déplacement = navigation dans le graphe</div>
+                <canvas id="comp_chart" height="120"></canvas>
+            </div>
+
+            <!-- Carte 2 : État compresseur — champ comptfetat (0/1)
+                 Voyant vert (ON) / rouge (OFF) / gris (données trop anciennes ou absentes) -->
+            <div class="card">
+                <h2>État compresseur</h2>
+                <div id="etat_status" class="status-badge">●</div>
+                <div id="etat_indicator" class="state-indicator unknown"></div>
+                <div class="state-text"    id="etat_text">État indisponible</div>
+                <div class="state-subtext" id="etat_subtext">Aucune donnée exploitable</div>
+                <div class="timestamp"     id="etat_time"></div>
+            </div>
+
+            <!-- Carte 3 : Commande compresseur — champ commande_compresseur (0/1)
+                 Distinct de l'état : la commande est l'ordre envoyé,
+                 l'état est la réponse réelle du compresseur. -->
+            <div class="card">
+                <h2>Commande compresseur</h2>
+                <div id="cmd_status" class="status-badge">●</div>
+                <div id="cmd_indicator" class="state-indicator unknown"></div>
+                <div class="state-text"    id="cmd_text">Commande indisponible</div>
+                <div class="state-subtext" id="cmd_subtext">Aucune donnée exploitable</div>
+                <div class="timestamp"     id="cmd_time"></div>
+            </div>
+
+        </div>
+    </main>
+</div>
+
+<!-- Marque le lien "Compresseur" comme actif dans la sidebar -->
+<script>document.querySelector('[data-page="compresseur"]').classList.add('active');</script>
+
+<script>
+    // ── Connexion Supabase ────────────────────────────────────────────
+    // Clé publique (publishable) — lecture seule, sans risque d'exposition.
+    const SUPABASE_URL = "https://xkqizqpflgcmyiqluuie.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_87i8-j5iiLISsoBSBvC7ng_RlE5TPrr";
+
+    // Device source de toutes les données de cette page
+    const DEVICE_ID = "arduino_ntc_01";
+
+    // Seuil de fraîcheur en minutes — au-delà, la donnée est considérée périmée
+    const DATA_FRESHNESS_LIMIT_MIN = 2;
+
+    // ── Utilitaires date / fraîcheur ─────────────────────────────────
+
+    /**
+     * formatLocalTime(utcString)
+     * Convertit un timestamp UTC en heure locale française (AAAA-MM-JJ à HH:MM).
+     * Retourne "--" si le timestamp est invalide.
+     */
+    function formatLocalTime(utcString) {
+        if (!utcString) return "--";
+        const date = new Date(utcString);
+        if (isNaN(date.getTime())) return "--";
+
+        const parts = new Intl.DateTimeFormat("fr-FR", {
+            timeZone: "Europe/Paris",
+            year: "numeric", month: "2-digit", day: "2-digit",
+            hour: "2-digit", minute: "2-digit", hour12: false
+        }).formatToParts(date);
+
+        const get = type => parts.find(p => p.type === type)?.value ?? "--";
+        return `${get("year")}-${get("month")}-${get("day")} à ${get("hour")}:${get("minute")}`;
+    }
+
+    /**
+     * getAgeMinutes(timestamp)
+     * Retourne l'âge d'un timestamp en minutes.
+     * Retourne Infinity si le timestamp est invalide.
+     */
+    function getAgeMinutes(timestamp) {
+        const last = new Date(timestamp);
+        if (isNaN(last.getTime())) return Infinity;
+        return (Date.now() - last.getTime()) / 1000 / 60;
+    }
+
+    /**
+     * isFresh(timestamp)
+     * Retourne true si la donnée date de moins de DATA_FRESHNESS_LIMIT_MIN minutes.
+     * Utilisé pour basculer les voyants en mode "unknown" si la donnée est périmée.
+     */
+    function isFresh(timestamp) {
+        return getAgeMinutes(timestamp) <= DATA_FRESHNESS_LIMIT_MIN;
+    }
+
+    /**
+     * updateStatus(badgeId, timestamp)
+     * Met à jour la couleur du badge ● selon la fraîcheur de la donnée.
+     * Vert si fraîche (≤ 2 min), rouge sinon.
+     */
+    function updateStatus(badgeId, timestamp) {
+        const badge = document.getElementById(badgeId);
+        if (!badge) return;
+        badge.style.color = (!timestamp || !isFresh(timestamp)) ? "#ef4444" : "#22c55e";
+    }
+
+    // ── Requêtes Supabase ────────────────────────────────────────────
+
+    /**
+     * fetchLatest(device)
+     * Récupère la mesure la plus récente d'un device.
+     * Lance une exception si la requête échoue (gérée dans refreshValues).
+     */
+    async function fetchLatest(device) {
+        const response = await fetch(
+            `${SUPABASE_URL}/rest/v1/measurements?device_id=eq.${device}&order=timestamp.desc&limit=1`,
+            { headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` } }
+        );
+        if (!response.ok) throw new Error(`Erreur fetchLatest: ${response.status}`);
+        const data = await response.json();
+        return data[0] || null;
+    }
+
+    /**
+     * fetchRange(device, hours)
+     * Récupère toutes les mesures sur les N dernières heures, triées par timestamp croissant.
+     * Limité à 6000 points pour éviter de surcharger le navigateur.
+     */
+    async function fetchRange(device, hours) {
+        const startDate = new Date(Date.now() - hours * 3600 * 1000).toISOString();
+        const response  = await fetch(
+            `${SUPABASE_URL}/rest/v1/measurements?device_id=eq.${device}&timestamp=gte.${startDate}&order=timestamp.asc&limit=6000`,
+            { headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` } }
+        );
+        if (!response.ok) throw new Error(`Erreur fetchRange: ${response.status}`);
+        return await response.json();
+    }
+
+    // ── Graphique vibration ──────────────────────────────────────────
+
+    let compChart             = null;
+    let currentCompRangeHours = 24;
+    let currentCompData       = [];
+
+    /**
+     * getSuggestedYBounds(values, padding)
+     * Calcule les bornes Y en ajoutant une marge autour des valeurs réelles.
+     * Padding de 5 unités (plus large que température car amplitudes plus variables).
+     * Plancher à 0 — une amplitude ne peut pas être négative.
+     */
+    function getSuggestedYBounds(values, padding = 5) {
+        if (!values || values.length === 0) return { min: 0, max: 100 };
+
+        const minVal = Math.min(...values);
+        const maxVal = Math.max(...values);
+        let min = Math.floor(minVal - padding);
+        let max = Math.ceil(maxVal  + padding);
+
+        if (min === max) { min -= 5; max += 5; }
+        if (min < 0) min = 0; // amplitude toujours positive
+
+        return { min, max };
+    }
+
+    /**
+     * createChart(data)
+     * Crée l'instance Chart.js pour le graphique de vibration.
+     * Filtre les points avec amplitude null/NaN avant le tracé.
+     * Zoom molette désactivé — utiliser les boutons pour éviter les accidents.
+     */
+    function createChart(data) {
+        const ctx = document.getElementById("comp_chart").getContext("2d");
+
+        // Filtre les entrées sans amplitude valide (autres devices, données corrompues)
+        const validData = data.filter(d =>
+            d.amplitude !== null &&
+            d.amplitude !== undefined &&
+            !isNaN(Number(d.amplitude))
+        );
+
+        const labels = validData.map(d => new Date(d.timestamp).toLocaleString("fr-FR", {
+            timeZone: "Europe/Paris",
+            day: "2-digit", month: "2-digit",
+            hour: "2-digit", minute: "2-digit", hour12: false
+        }));
+
+        const values = validData.map(d => Number(d.amplitude));
+        const bounds = getSuggestedYBounds(values, 5);
+
+        return new Chart(ctx, {
+            type: "line",
+            data: {
+                labels,
+                datasets: [{
+                    label:            "Amplitude vibration",
+                    data:             values,
+                    borderColor:      "#f97316",
+                    backgroundColor:  "rgba(249,115,22,0.12)",
+                    tension:          0.3,
+                    fill:             true,
+                    pointRadius:      0,       // pas de points — trop de données
+                    pointHoverRadius: 4,
+                    borderWidth:      2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                interaction: { mode: "nearest", intersect: false },
+                scales: {
+                    x: {
+                        ticks: { color: "#94a3b8", maxRotation: 0, autoSkip: true, maxTicksLimit: 10 },
+                        grid:  { color: "rgba(148,163,184,0.08)" }
+                    },
+                    y: {
+                        min: bounds.min,
+                        max: bounds.max,
+                        ticks: { color: "#94a3b8" },
+                        grid:  { color: "rgba(148,163,184,0.08)" }
+                    }
+                },
+                plugins: {
+                    legend: { labels: { color: "#334155" } },
+                    zoom: {
+                        pan:  { enabled: true, mode: "xy" },
+                        // Zoom molette/pinch/drag désactivé — boutons explicites uniquement
+                        zoom: { wheel: { enabled: false }, pinch: { enabled: false }, drag: { enabled: false }, mode: "xy" }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: ctx => ` Amplitude : ${ctx.parsed.y.toFixed(2)}`
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // ── Fonctions zoom (appelées par les boutons) ────────────────────
+
+    function zoomIn()  { if (compChart) compChart.zoom({ x: 1.2 }); }
+    function zoomOut() { if (compChart) compChart.zoom({ x: 0.8 }); }
+
+    /**
+     * zoomYIn() / zoomYOut()
+     * Zoom sur l'axe Y en modifiant directement les bornes min/max
+     * autour du centre courant (le zoom natif Chart.js ne gère pas bien Y seul).
+     */
+    function zoomYIn() {
+        if (!compChart) return;
+        const y = compChart.options.scales.y;
+        const c = (y.min + y.max) / 2, h = (y.max - y.min) / 2 * 0.7;
+        y.min = Math.round((c - h) * 100) / 100;
+        y.max = Math.round((c + h) * 100) / 100;
+        compChart.update();
+    }
+
+    function zoomYOut() {
+        if (!compChart) return;
+        const y = compChart.options.scales.y;
+        const c = (y.min + y.max) / 2, h = (y.max - y.min) / 2 * 1.4;
+        y.min = Math.round((c - h) * 100) / 100;
+        y.max = Math.round((c + h) * 100) / 100;
+        compChart.update();
+    }
+
+    function resetZoom() { if (compChart) compChart.resetZoom(); }
+
+    /**
+     * loadChart()
+     * Recharge le graphique pour la plage sélectionnée.
+     * Détruit l'instance précédente pour éviter les fuites mémoire.
+     */
+    async function loadChart() {
+        try {
+            const data    = await fetchRange(DEVICE_ID, currentCompRangeHours);
+            currentCompData = data || [];
+            if (compChart) compChart.destroy();
+            compChart = createChart(currentCompData);
+        } catch (error) {
+            console.error(error);
+        }
+    }
+
+    // ── Mise à jour des cartes d'état ────────────────────────────────
+
+    /**
+     * updateAmplitudeCard(comp)
+     * Met à jour la valeur RMS courante et l'horodatage.
+     * Affiche "--" si aucune donnée disponible.
+     */
+    function updateAmplitudeCard(comp) {
+        const ampEl  = document.getElementById("comp_amp");
+        const timeEl = document.getElementById("comp_time");
+
+        if (!comp || comp.amplitude === null || comp.amplitude === undefined) {
+            ampEl.textContent  = "--";
+            timeEl.textContent = "Dernière mesure : --";
+            document.getElementById("comp_status").style.color = "#ef4444";
+            return;
+        }
+
+        ampEl.textContent  = Number(comp.amplitude).toFixed(2);
+        timeEl.textContent = "Dernière mesure : " + formatLocalTime(comp.timestamp);
+        updateStatus("comp_status", comp.timestamp);
+    }
+
+    /**
+     * updateEtatCompresseur(value, timestamp)
+     * Met à jour le voyant "État compresseur" (champ comptfetat).
+     * Bascule en "unknown" si la donnée est trop ancienne (isFresh = false).
+     * Distinction entre état réel (comptfetat) et ordre envoyé (commande_compresseur).
+     */
+    function updateEtatCompresseur(value, timestamp) {
+        const indicator = document.getElementById("etat_indicator");
+        const text      = document.getElementById("etat_text");
+        const subtext   = document.getElementById("etat_subtext");
+        const time      = document.getElementById("etat_time");
+
+        indicator.classList.remove("on", "off", "unknown");
+
+        if (!timestamp || !isFresh(timestamp)) {
+            indicator.classList.add("unknown");
+            text.textContent    = "État indisponible";
+            subtext.textContent = "Dernière donnée trop ancienne";
+            time.textContent    = "Dernière mesure : " + formatLocalTime(timestamp);
+            updateStatus("etat_status", timestamp);
+            return;
+        }
+
+        if (Number(value) === 1) {
+            indicator.classList.add("on");
+            text.textContent    = "Compresseur ON";
+            subtext.textContent = "";
+        } else {
+            indicator.classList.add("off");
+            text.textContent    = "Compresseur OFF";
+            subtext.textContent = "";
+        }
+
+        time.textContent = "Dernière mesure : " + formatLocalTime(timestamp);
+        updateStatus("etat_status", timestamp);
+    }
+
+    /**
+     * setEtatUnavailable(timestamp)
+     * Force le voyant "État" en mode inconnu (gris).
+     * Appelé quand le champ comptfetat est absent de la réponse Supabase.
+     */
+    function setEtatUnavailable(timestamp = null) {
+        const indicator = document.getElementById("etat_indicator");
+        indicator.classList.remove("on", "off");
+        indicator.classList.add("unknown");
+        document.getElementById("etat_text").textContent    = "État indisponible";
+        document.getElementById("etat_subtext").textContent = "Aucune donnée exploitable";
+        document.getElementById("etat_time").textContent    = "Dernière mesure : " + formatLocalTime(timestamp);
+        updateStatus("etat_status", timestamp);
+    }
+
+    /**
+     * updateCommandeCompresseur(value, timestamp)
+     * Met à jour le voyant "Commande compresseur" (champ commande_compresseur).
+     * La commande est l'ordre envoyé au compresseur, distinct de son état réel.
+     * ON = ordre de tourner, OFF = ordre d'arrêt.
+     */
+    function updateCommandeCompresseur(value, timestamp) {
+        const indicator = document.getElementById("cmd_indicator");
+        const text      = document.getElementById("cmd_text");
+        const subtext   = document.getElementById("cmd_subtext");
+        const time      = document.getElementById("cmd_time");
+
+        indicator.classList.remove("on", "off", "unknown");
+
+        if (!timestamp || !isFresh(timestamp)) {
+            indicator.classList.add("unknown");
+            text.textContent    = "Commande indisponible";
+            subtext.textContent = "Dernière donnée trop ancienne";
+            time.textContent    = "Dernière mesure : " + formatLocalTime(timestamp);
+            updateStatus("cmd_status", timestamp);
+            return;
+        }
+
+        if (Number(value) === 1) {
+            indicator.classList.add("on");
+            text.textContent    = "Commande MARCHE";
+            subtext.textContent = "Ordre envoyé : tourner";
+        } else {
+            indicator.classList.add("off");
+            text.textContent    = "Commande ARRÊT";
+            subtext.textContent = "Ordre envoyé : ne pas tourner";
+        }
+
+        time.textContent = "Dernière mesure : " + formatLocalTime(timestamp);
+        updateStatus("cmd_status", timestamp);
+    }
+
+    /**
+     * setCommandeUnavailable(timestamp)
+     * Force le voyant "Commande" en mode inconnu (gris).
+     * Appelé quand le champ commande_compresseur est absent de la réponse.
+     */
+    function setCommandeUnavailable(timestamp = null) {
+        const indicator = document.getElementById("cmd_indicator");
+        indicator.classList.remove("on", "off");
+        indicator.classList.add("unknown");
+        document.getElementById("cmd_text").textContent    = "Commande indisponible";
+        document.getElementById("cmd_subtext").textContent = "Aucune donnée exploitable";
+        document.getElementById("cmd_time").textContent    = "Dernière mesure : " + formatLocalTime(timestamp);
+        updateStatus("cmd_status", timestamp);
+    }
+
+    // ── Rafraîchissement principal ───────────────────────────────────
+
+    /**
+     * refreshValues()
+     * Récupère la dernière mesure et met à jour les 3 cartes :
+     * amplitude, état compresseur, commande compresseur.
+     * En cas d'erreur réseau/Supabase, toutes les cartes passent en indisponible.
+     */
+    async function refreshValues() {
+        try {
+            const comp = await fetchLatest(DEVICE_ID);
+
+            if (!comp) {
+                updateAmplitudeCard(null);
+                setEtatUnavailable(null);
+                setCommandeUnavailable(null);
+                return;
+            }
+
+            updateAmplitudeCard(comp);
+
+            // comptfetat peut être absent si l'Arduino n'a pas encore envoyé la donnée
+            if (comp.comptfetat !== null && comp.comptfetat !== undefined) {
+                updateEtatCompresseur(comp.comptfetat, comp.timestamp);
+            } else {
+                setEtatUnavailable(comp.timestamp);
+            }
+
+            // commande_compresseur idem
+            if (comp.commande_compresseur !== null && comp.commande_compresseur !== undefined) {
+                updateCommandeCompresseur(comp.commande_compresseur, comp.timestamp);
+            } else {
+                setCommandeUnavailable(comp.timestamp);
+            }
+
+        } catch (error) {
+            // Erreur réseau ou Supabase indisponible — tout passe en indisponible
+            console.error(error);
+            updateAmplitudeCard(null);
+            setEtatUnavailable(null);
+            setCommandeUnavailable(null);
+        }
+    }
+
+    // ── Initialisation ───────────────────────────────────────────────
+
+    // Recharge le graphique quand l'utilisateur change la plage temporelle
+    document.getElementById("comp_range_select").addEventListener("change", async function () {
+        currentCompRangeHours = Number(this.value);
+        await loadChart();
+    });
+
+    // Chargement initial
+    refreshValues();
+    loadChart();
+
+    // Rafraîchissement de la valeur courante toutes les 30 secondes
+    setInterval(refreshValues, 30000);
+
+    // Rafraîchissement du graphique toutes les 60 secondes
+    setInterval(loadChart, 60000);
+</script>
+
+<script>
+    /**
+     * toggleMenu() / closeMenu()
+     * Gestion de la sidebar responsive.
+     * Sur mobile (≤ 720px) : sidebar en overlay.
+     * Sur desktop : sidebar rétractable.
+     */
+    function toggleMenu() {
+        const sidebar = document.getElementById("sidebar");
+        const main    = document.querySelector(".main-content");
+        const overlay = document.getElementById("overlay");
+        if (!sidebar || !main || !overlay) return;
+        if (window.innerWidth <= 720) {
+            sidebar.classList.toggle("active");
+            overlay.classList.toggle("active");
+        } else {
+            sidebar.classList.toggle("closed");
+            main.classList.toggle("full");
+        }
+    }
+
+    function closeMenu() {
+        const sidebar = document.getElementById("sidebar");
+        const overlay = document.getElementById("overlay");
+        if (!sidebar || !overlay) return;
+        sidebar.classList.remove("active");
+        overlay.classList.remove("active");
+    }
+
+    document.querySelectorAll(".sidebar-menu a").forEach(a => {
+        a.addEventListener("click", () => {
+            if (window.innerWidth <= 720) closeMenu();
+        });
+    });
+</script>
+
+</body>
+</html>

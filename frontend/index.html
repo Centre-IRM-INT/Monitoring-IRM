@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Centre IRM – Supervision</title>
+
+    <!-- Police Inter via Google Fonts — utilisée sur toutes les pages -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+
+    <!-- Feuille de style commune à toutes les pages du dashboard -->
+    <link rel="stylesheet" href="style.css?v=final">
+</head>
+<body>
+
+    <!-- Bouton pour ouvrir/fermer la sidebar.
+         Sur mobile (≤ 720px) : ouvre la sidebar en overlay par-dessus le contenu.
+         Sur desktop : rétracte la sidebar pour agrandir la zone de contenu. -->
+    <button class="menu-toggle" type="button" aria-label="Ouvrir le menu" onclick="toggleMenu()">☰</button>
+
+    <!-- Fond semi-transparent affiché derrière la sidebar sur mobile.
+         Un clic dessus ferme la sidebar via closeMenu(). -->
+    <div id="overlay" onclick="closeMenu()"></div>
+
+    <!-- Structure principale : sidebar fixe à gauche + contenu à droite -->
+    <div class="app-shell">
+
+        <!-- ─────────────────────────────────────────────
+             SIDEBAR — Navigation latérale
+        ──────────────────────────────────────────────── -->
+        <aside id="sidebar" class="sidebar">
+
+            <!-- Logo et nom de l'application -->
+            <div class="sidebar-brand">
+                <span>IRM Supervision</span>
+                <img src="Logo_IRM.png" alt="Logo IRM">
+            </div>
+
+            <!-- Section Monitoring — pages de données capteurs -->
+            <div class="sidebar-section">
+                <div class="sidebar-title"><span>Monitoring</span><span>⌄</span></div>
+                <nav class="sidebar-menu">
+                    <!-- data-page identifie la page courante pour que le JS puisse
+                         ajouter la classe "active" sur le bon lien -->
+                    <a href="index.html"       data-page="index">      <span class="dot"></span><span class="label-text">Vue générale</span></a>
+                    <a href="atmosphere.html"  data-page="atmosphere"> <span class="dot"></span><span class="label-text">Atmosphère</span></a>
+                    <a href="eaufroide.html"   data-page="eaufroide">  <span class="dot"></span><span class="label-text">Eau glacée</span></a>
+                    <a href="compresseur.html" data-page="compresseur"><span class="dot"></span><span class="label-text">Compresseur</span></a>
+                    <a href="groupefroid.html" data-page="groupefroid"><span class="dot"></span><span class="label-text">Groupe froid</span></a>
+                </nav>
+            </div>
+
+            <!-- Section Système — alertes et historique -->
+            <div class="sidebar-section">
+                <div class="sidebar-title"><span>Système</span><span>⌄</span></div>
+                <nav class="sidebar-menu">
+                    <a href="alerte.html"      data-page="alerte">     <span class="dot"></span><span class="label-text">Alertes</span></a>
+                    <a href="datalogging.html" data-page="datalogging"><span class="dot"></span><span class="label-text">Datalogging</span></a>
+                </nav>
+            </div>
+
+            <!-- Pied de sidebar — identification de la plateforme -->
+            <div class="sidebar-footer">Plateforme IRM – INT<br>Consultation distante</div>
+
+        </aside>
+
+        <!-- ─────────────────────────────────────────────
+             CONTENU PRINCIPAL
+        ──────────────────────────────────────────────── -->
+        <main class="main-content">
+
+            <!-- Barre supérieure : titre + badges indiquant la source de données -->
+            <div class="topbar">
+                <div>
+                    <h1 class="page-title">Supervision IRM</h1>
+                    <div class="page-subtitle">Vue générale des modules de surveillance</div>
+                </div>
+                <!-- Rappel que cette interface lit les données via l'API REST Supabase
+                     sans aucune écriture possible depuis le navigateur -->
+                <div class="topbar-actions">
+                    <span class="badge-soft">Supabase REST</span>
+                    <span class="badge-soft">Lecture seule</span>
+                </div>
+            </div>
+
+            <!-- Grille des modules — chaque carte renvoie vers la page de détail.
+                 Donne une vue d'ensemble rapide de tous les équipements surveillés. -->
+            <div class="container">
+                <div class="dashboard-grid">
+
+                    <!-- Atmosphère — arduino_atmo
+                         Température, humidité, pression de la salle IRM -->
+                    <a href="atmosphere.html" class="card module-card">
+                        <div>
+                            <div class="label">Données atmosphériques</div>
+                            <div class="metric">Atmo</div>
+                            <p>Température – humidité – pression</p>
+                        </div>
+                        <div class="open">View details</div>
+                    </a>
+
+                    <!-- Eau glacée — arduino_ntc_01
+                         Température du circuit de refroidissement via sonde NTC -->
+                    <a href="eaufroide.html" class="card module-card">
+                        <div>
+                            <div class="label">Circuit eau glacée</div>
+                            <div class="metric">NTC</div>
+                            <p>Température du circuit de refroidissement</p>
+                        </div>
+                        <div class="open">View details</div>
+                    </a>
+
+                    <!-- Compresseur — arduino_ntc_01
+                         Amplitude vibratoire RMS + états logiques compresseur hélium -->
+                    <a href="compresseur.html" class="card module-card">
+                        <div>
+                            <div class="label">Compresseur</div>
+                            <div class="metric">Vib.</div>
+                            <p>Amplitude vibratoire et état compresseur</p>
+                        </div>
+                        <div class="open">View details</div>
+                    </a>
+
+                    <!-- Groupe froid — arduino_groupe_froid (réservé, non encore déployé) -->
+                    <a href="groupefroid.html" class="card module-card">
+                        <div>
+                            <div class="label">Groupe froid</div>
+                            <div class="metric">ON/OFF</div>
+                            <p>Surveillance de l'état de fonctionnement</p>
+                        </div>
+                        <div class="open">View details</div>
+                    </a>
+
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Marque le lien "Vue générale" comme actif dans la sidebar.
+         Chaque page fait la même chose avec son propre attribut data-page. -->
+    <script>
+        document.querySelector('[data-page="index"]').classList.add('active');
+    </script>
+
+    <script>
+        /**
+         * toggleMenu()
+         * Ouvre ou ferme la sidebar selon la taille de l'écran.
+         *
+         * Sur mobile (≤ 720px) :
+         *   - Ajoute/retire la classe "active" sur la sidebar (translateX(0))
+         *   - Affiche/cache l'overlay de fond
+         *
+         * Sur desktop :
+         *   - Ajoute/retire la classe "closed" sur la sidebar (translateX(-100%))
+         *   - Ajoute/retire la classe "full" sur le contenu pour qu'il prenne toute la largeur
+         */
+        function toggleMenu() {
+            const sidebar = document.getElementById("sidebar");
+            const main    = document.querySelector(".main-content");
+            const overlay = document.getElementById("overlay");
+            if (!sidebar || !main || !overlay) return;
+
+            if (window.innerWidth <= 720) {
+                sidebar.classList.toggle("active");
+                overlay.classList.toggle("active");
+            } else {
+                sidebar.classList.toggle("closed");
+                main.classList.toggle("full");
+            }
+        }
+
+        /**
+         * closeMenu()
+         * Ferme la sidebar sur mobile.
+         * Appelée au clic sur l'overlay ou sur un lien de navigation.
+         */
+        function closeMenu() {
+            const sidebar = document.getElementById("sidebar");
+            const overlay = document.getElementById("overlay");
+            if (!sidebar || !overlay) return;
+            sidebar.classList.remove("active");
+            overlay.classList.remove("active");
+        }
+
+        // Ferme la sidebar sur mobile après navigation vers une autre page
+        document.querySelectorAll(".sidebar-menu a").forEach(a => {
+            a.addEventListener("click", () => {
+                if (window.innerWidth <= 720) closeMenu();
+            });
+        });
+    </script>
+
+</body>
+</html>
