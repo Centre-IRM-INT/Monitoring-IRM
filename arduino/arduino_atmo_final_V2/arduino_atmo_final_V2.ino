@@ -248,7 +248,7 @@ void loop() {
         lastSendAttempt = now; // démarre le compte à rebours de 30s
         pendingSend     = true;
 
-        float temperature = ENV.readTemperature();
+        float temperature = ENV.readTemperature()-5.1;
         float humidity    = ENV.readHumidity();
         float pressure    = ENV.readPressure() * 10.0; // kPa → hPa
 
