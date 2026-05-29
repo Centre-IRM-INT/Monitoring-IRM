@@ -1,16 +1,16 @@
 {
   "arduino_atmo": {
     "temperature": {
-      "min": 12.0,
-      "max": 26.0,
+      "min": 15.0,
+      "max": 30.0,
       "unit": "C",
-      "enabled": false,
+      "enabled": true,
       "label": "Temperature salle IRM",
       "message_low": "Alerte temperature salle IRM trop basse. Veuillez verifier.",
       "message_high": "Alerte temperature salle IRM trop elevee. Veuillez verifier."
     },
     "humidity": {
-      "min": 20.0,
+      "min": 35.0,
       "max": 80.0,
       "unit": "%",
       "enabled": true,
@@ -22,7 +22,7 @@
       "min": 950.0,
       "max": 1050.0,
       "unit": "hPa",
-      "enabled": true,
+      "enabled": false,
       "label": "Pression salle IRM",
       "message_low": "Alerte pression salle IRM trop basse. Veuillez verifier.",
       "message_high": "Alerte pression salle IRM trop elevee. Veuillez verifier."
@@ -30,8 +30,8 @@
   },
   "arduino_ntc_01": {
     "temperature": {
-      "min": 5.0,
-      "max": 15.0,
+      "min":3.0,
+      "max": 14.0,
       "unit": "C",
       "enabled": true,
       "label": "Temperature eau glacee",
