@@ -1,0 +1,136 @@
+{
+  "arduino_atmo": {
+    "temperature": {
+      "min": 15.0,
+      "max": 30.0,
+      "unit": "C",
+      "enabled": true,
+      "label": "Temperature salle IRM",
+      "message_low": "Alerte temperature salle IRM trop basse. Veuillez verifier.",
+      "message_high": "Alerte temperature salle IRM trop elevee. Veuillez verifier."
+    },
+    "humidity": {
+      "min": 35.0,
+      "max": 80.0,
+      "unit": "%",
+      "enabled": true,
+      "label": "Humidite salle IRM",
+      "message_low": "Alerte humidite salle IRM trop basse. Veuillez verifier.",
+      "message_high": "Alerte humidite salle IRM trop elevee. Veuillez verifier."
+    },
+    "pressure": {
+      "min": 950.0,
+      "max": 1050.0,
+      "unit": "hPa",
+      "enabled": false,
+      "label": "Pression salle IRM",
+      "message_low": "Alerte pression salle IRM trop basse. Veuillez verifier.",
+      "message_high": "Alerte pression salle IRM trop elevee. Veuillez verifier."
+    }
+  },
+  "arduino_ntc_01": {
+    "temperature": {
+      "min": 6.0,
+      "max": 14.5,
+      "unit": "C",
+      "enabled": true,
+      "label": "Temperature eau glacee",
+      "message_low": "Alerte eau glacee trop basse. Veuillez verifier le circuit d eau glacee.",
+      "message_high": "Alerte eau glacee trop elevee. Veuillez verifier le circuit d eau glacee."
+    },
+    "amplitude": {
+      "min": 2,
+      "max": 120.0,
+      "unit": "RMS",
+      "enabled": true,
+      "label": "Vibration compresseur",
+      "message_low": "Alerte vibration compresseur trop faible. Veuillez verifier si le compresseur est arrete ou si le capteur ne mesure plus correctement.",
+      "message_high": "Alerte vibration compresseur trop elevee. Veuillez verifier le compresseur."
+    },
+    "comptfetat": {
+      "expected": [1],
+      "unit": "state",
+      "enabled": true,
+      "label": "Etat compresseur TF",
+      "message_expected": "Alerte etat compresseur TF incorrect. La valeur attendue est 1."
+    },
+    "commande_compresseur": {
+      "expected": [1],
+      "unit": "state",
+      "enabled": true,
+      "label": "Commande compresseur",
+      "message_expected": "Alerte commande compresseur incorrecte. La valeur attendue est 1."
+    }
+  },
+  "arduino_cta": {
+    "marche_humidificateur": {
+      "expected": [1],
+      "unit": "state",
+      "enabled": false,
+      "label": "Marche humidificateur CTA",
+      "message_expected": "Alerte humidificateur CTA a l arret. Veuillez verifier."
+    },
+    "defaut_humidificateur": {
+      "expected": [0],
+      "unit": "state",
+      "enabled": true,
+      "label": "Defaut humidificateur CTA",
+      "message_expected": "Alerte defaut humidificateur CTA detecte. Veuillez verifier."
+    },
+    "marche_groupe_froid_1": {
+      "expected": [1],
+      "unit": "state",
+      "enabled": false,
+      "label": "Marche groupe froid 1 CTA",
+      "message_expected": "Alerte groupe froid 1 CTA a l arret. Veuillez verifier."
+    },
+    "defaut_groupe_froid_1": {
+      "expected": [0],
+      "unit": "state",
+      "enabled": true,
+      "label": "Defaut groupe froid 1 CTA",
+      "message_expected": "Alerte defaut groupe froid 1 CTA detecte. Veuillez verifier."
+    },
+    "marche_groupe_froid_2": {
+      "expected": [1],
+      "unit": "state",
+      "enabled": false,
+      "label": "Marche groupe froid 2 CTA",
+      "message_expected": "Alerte groupe froid 2 CTA a l arret. Veuillez verifier."
+    },
+    "defaut_groupe_froid_2": {
+      "expected": [0],
+      "unit": "state",
+      "enabled": true,
+      "label": "Defaut groupe froid 2 CTA",
+      "message_expected": "Alerte defaut groupe froid 2 CTA detecte. Veuillez verifier."
+    },
+    "tension": {
+      "expected": [1],
+      "unit": "state",
+      "enabled": true,
+      "label": "Defaut tension armoire CTA",
+      "message_expected": "Alerte tension armoire CTA no detecte. Veuillez verifier."
+    },
+    "defaut_variateur": {
+      "expected": [0],
+      "unit": "state",
+      "enabled": true,
+      "label": "Defaut variateur CTA",
+      "message_expected": "Alerte defaut variateur CTA detecte. Veuillez verifier."
+    },
+    "defaut_cta": {
+      "expected": [0],
+      "unit": "state",
+      "enabled": true,
+      "label": "Defaut general CTA",
+      "message_expected": "Alerte defaut general CTA detecte. Veuillez verifier."
+    }
+  },
+  
+  "watchdog": {
+    "delai_alerte_minutes": 15,
+    "rappels_minutes": [30],
+    "rappel_horaire_apres_minutes": 60
+  }
+}

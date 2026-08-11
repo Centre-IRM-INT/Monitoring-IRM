@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Centre IRM – Datalogging</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css?v=final">
+    <style>
+        .refresh-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 1.25rem;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .expected-note { font-size: 13px; color: var(--muted); }
+        .btn-refresh {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+            font-weight: 600;
+            background: none;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 6px 14px;
+            cursor: pointer;
+            color: var(--text);
+            transition: background 0.15s;
+        }
+        .btn-refresh:hover { background: var(--surface-2); }
+        .slider-nav-row {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 8px;
+            margin-bottom: 1rem;
+        }
+        .nav-btn {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            width: 34px;
+            height: 34px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            color: var(--text);
+            font-size: 18px;
+            transition: background 0.15s;
+        }
+        .nav-btn:hover    { background: var(--surface-2); }
+        .nav-btn:disabled { opacity: 0.3; cursor: default; }
+        .track-outer { overflow: hidden; }
+        .dl-track {
+            display: flex;
+            gap: 20px;
+            transition: transform 0.3s ease;
+        }
+        .dl-card {
+            flex: 0 0 calc(50% - 10px);
+            min-width: 0;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 1.35rem 1.5rem;
+            box-sizing: border-box;
+        }
+        .dl-card.today-card { border: 2px solid #378ADD; }
+        .dl-card-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            margin-bottom: 1rem;
+            gap: 8px;
+        }
+        .dl-filename { font-size: 14px; font-weight: 600; color: var(--text); }
+        .dl-relday   { font-size: 12px; font-weight: 400; color: var(--muted); margin-top: 2px; }
+        .dl-badge {
+            font-size: 11px;
+            font-weight: 700;
+            padding: 3px 10px;
+            border-radius: 20px;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+        .badge-ok         { background: #d1fae5; color: #065f46; }
+        .badge-warn       { background: #fef3c7; color: #92400e; }
+        .badge-error      { background: #fee2e2; color: #991b1b; }
+        .badge-inprogress { background: #e0e7ff; color: #3730a3; }
+        .badge-nodata     { background: #f1f5f9; color: #475569; }
+
+        /* Une seule stat centrée */
+        .dl-stats {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 1rem;
+        }
+        .dl-stat {
+            background: var(--surface-2);
+            border-radius: 10px;
+            padding: 0.6rem 1.5rem;
+            text-align: center;
+        }
+        .dl-stat-label { font-size: 11px; color: var(--muted); margin-bottom: 3px; }
+        .dl-stat-value { font-size: 26px; font-weight: 700; color: var(--text); }
+        .dl-stat-value.ok    { color: #059669; }
+        .dl-stat-value.warn  { color: #d97706; }
+        .dl-stat-value.error { color: #dc2626; }
+
+        .dl-bar-wrap  { height: 5px; background: var(--surface-2); border-radius: 3px; overflow: hidden; margin-bottom: 8px; }
+        .dl-bar-fill  { height: 100%; border-radius: 3px; transition: width 0.5s ease; }
+        .bar-ok       { background: #059669; }
+        .bar-warn     { background: #d97706; }
+        .bar-error    { background: #dc2626; }
+        .bar-blue     { background: #378ADD; }
+        .dl-bar-label { font-size: 11.5px; color: var(--muted); margin-bottom: 10px; }
+
+        .dl-devices-note {
+            font-size: 12px;
+            color: var(--muted);
+            padding: 8px 10px;
+            background: var(--surface-2);
+            border-radius: 8px;
+            line-height: 1.5;
+        }
+
+        .dots-row       { display: flex; justify-content: center; gap: 6px; margin-top: 1.25rem; }
+        .dot-btn        { width: 7px; height: 7px; border-radius: 50%; background: var(--border); border: none; padding: 0; cursor: pointer; transition: background 0.2s; }
+        .dot-btn.active { background: #378ADD; }
+        .loading-msg    { text-align: center; padding: 3rem; color: var(--muted); font-size: 14px; }
+        .last-update    { font-size: 12px; color: var(--muted); margin-top: 1rem; }
+
+        @media (max-width: 600px) {
+            .dl-card       { flex: 0 0 100%; padding: 1rem 1.1rem; }
+            .dl-stat-value { font-size: 20px; }
+            .dl-stat-label { font-size: 10px; }
+            .dl-filename   { font-size: 13px; }
+            .dl-badge      { font-size: 10px; }
+            .dl-bar-label  { font-size: 11px; }
+        }
+    </style>
+</head>
+<body>
+    <button class="menu-toggle" type="button" aria-label="Ouvrir le menu" onclick="toggleMenu()">☰</button>
+    <div id="overlay" onclick="closeMenu()"></div>
+    <div class="app-shell">
+
+        <aside id="sidebar" class="sidebar">
+            <div class="sidebar-brand"><span>IRM Supervision</span><img src="Logo_IRM.png" alt="Logo IRM"></div>
+            <div class="sidebar-section">
+                <div class="sidebar-title"><span>Monitoring</span><span>⌄</span></div>
+                <nav class="sidebar-menu">
+                    <a href="index.html"       data-page="index">      <span class="dot"></span><span class="label-text">Vue générale</span></a>
+                    <a href="atmosphere.html"  data-page="atmosphere"> <span class="dot"></span><span class="label-text">Atmosphère</span></a>
+                    <a href="eaufroide.html"   data-page="eaufroide">  <span class="dot"></span><span class="label-text">Eau glacée</span></a>
+                    <a href="compresseur.html" data-page="compresseur"><span class="dot"></span><span class="label-text">Compresseur</span></a>
+                    <a href="groupefroid.html" data-page="groupefroid"><span class="dot"></span><span class="label-text">Groupe froid</span></a>
+                    <a href="humidificateur.html" data-page="humidificateur"><span class="dot"></span><span class="label-text">Humidificateur</span></a>
+                </nav>
+            </div>
+            <div class="sidebar-section">
+                <div class="sidebar-title"><span>Système</span><span>⌄</span></div>
+                <nav class="sidebar-menu">
+                    <a href="alerte.html"      data-page="alerte">     <span class="dot"></span><span class="label-text">Alertes</span></a>
+                    <a href="datalogging.html" data-page="datalogging"><span class="dot"></span><span class="label-text">Datalogging</span></a>
+                </nav>
+            </div>
+            <div class="sidebar-footer">Plateforme IRM – INT<br>Consultation distante</div>
+        </aside>
+
+        <main class="main-content">
+            <div class="topbar">
+                <div>
+                    <h1 class="page-title">Datalogging</h1>
+                    <div class="page-subtitle">Vérification de la sauvegarde CSV quotidienne</div>
+                </div>
+                <div class="topbar-actions">
+                    <span class="badge-soft">Supabase REST</span>
+                    <span class="badge-soft">Lecture seule</span>
+                </div>
+            </div>
+
+            <div class="container">
+                <div class="refresh-row">
+                    <p class="expected-note">
+                        Nombre de lignes comptées à minuit par le Pi dans le fichier CSV du jour
+                    </p>
+                    <button class="btn-refresh" onclick="loadData()">↻ Actualiser</button>
+                </div>
+                <div class="slider-nav-row">
+                    <button class="nav-btn" id="btn-prev" onclick="slideDir(-1)" disabled title="Jours précédents">&#8592;</button>
+                    <button class="nav-btn" id="btn-next" onclick="slideDir(1)"  title="Jours suivants">&#8594;</button>
+                </div>
+                <div class="track-outer">
+                    <div class="dl-track" id="dl-track">
+                        <div class="loading-msg">Chargement des données...</div>
+                    </div>
+                </div>
+                <div class="dots-row" id="dots-row"></div>
+                <div class="last-update" id="last-update"></div>
+            </div>
+        </main>
+    </div>
+
+    <script>document.querySelector('[data-page="datalogging"]').classList.add('active');</script>
+
+    <script>
+        const SUPABASE_URL = "https://xkqizqpflgcmyiqluuie.supabase.co";
+        const SUPABASE_KEY = "sb_publishable_87i8-j5iiLISsoBSBvC7ng_RlE5TPrr";
+        const EXPECTED = 4320;
+        const VISIBLE  = 2;
+
+        let allDays = [];
+        let offset  = 0;
+
+        function getDateStr(daysAgo) {
+            const d = new Date();
+            d.setDate(d.getDate() - daysAgo);
+            return d.toISOString().slice(0, 10);
+        }
+
+        function relLabel(daysAgo) {
+            if (daysAgo === 0) return "aujourd'hui";
+            if (daysAgo === 1) return "hier";
+            return `il y a ${daysAgo} jours`;
+        }
+
+        function buildCard(day) {
+            const { dateStr, daysAgo, lineCount, loaded } = day;
+            const isToday = daysAgo === 0;
+
+            const pctRaw = loaded ? (lineCount / EXPECTED) * 100 : 0;
+            const pctBar = Math.min(100, pctRaw);
+
+            let badgeClass, badgeText, valClass, barClass, statusMsg;
+
+            if (isToday) {
+                badgeClass = 'badge-inprogress';
+                badgeText  = 'En cours';
+                valClass   = '';
+                barClass   = 'bar-blue';
+                statusMsg  = 'Le Pi enverra le bilan à minuit';
+            } else if (!loaded) {
+                badgeClass = 'badge-nodata';
+                badgeText  = 'Aucune donnée';
+                valClass   = '';
+                barClass   = 'bar-ok';
+                statusMsg  = 'Aucun résumé reçu pour ce jour — Pi éteint ou erreur réseau à minuit';
+            } else if (lineCount > EXPECTED + 50) {
+                badgeClass = 'badge-warn';
+                badgeText  = 'Surplus';
+                valClass   = 'warn';
+                barClass   = 'bar-warn';
+                statusMsg  = `⚠ ${(lineCount - EXPECTED).toLocaleString('fr-FR')} lignes en excès — possible doublon d'envoi`;
+            } else if (pctRaw >= 95) {
+                badgeClass = 'badge-ok';
+                badgeText  = 'Complet';
+                valClass   = 'ok';
+                barClass   = 'bar-ok';
+                const diff = EXPECTED - lineCount;
+                statusMsg  = diff <= 0
+                    ? '✓ Sauvegarde complète — tous les devices ont correctement transmis'
+                    : `✓ Quasi-complet — ${diff} ligne${diff > 1 ? 's' : ''} manquante${diff > 1 ? 's' : ''}`;
+            } else if (pctRaw >= 70) {
+                badgeClass = 'badge-warn';
+                badgeText  = 'Incomplet';
+                valClass   = 'warn';
+                barClass   = 'bar-warn';
+                statusMsg  = `⚠ Manque ${(EXPECTED - lineCount).toLocaleString('fr-FR')} lignes — possible interruption`;
+            } else {
+                badgeClass = 'badge-error';
+                badgeText  = 'Problème';
+                valClass   = 'error';
+                barClass   = 'bar-error';
+                statusMsg  = `✗ Manque ${(EXPECTED - lineCount).toLocaleString('fr-FR')} lignes — vérifier les devices`;
+            }
+
+            const receivedStr = (loaded && !isToday) ? lineCount.toLocaleString('fr-FR') : '—';
+
+            return `
+                <div class="dl-card${isToday ? ' today-card' : ''}">
+                    <div class="dl-card-header">
+                        <div>
+                            <div class="dl-filename">📄 ${dateStr}.csv</div>
+                            <div class="dl-relday">${relLabel(daysAgo)}</div>
+                        </div>
+                        <span class="dl-badge ${badgeClass}">${badgeText}</span>
+                    </div>
+                    <div class="dl-stats">
+                        <div class="dl-stat">
+                            <div class="dl-stat-label">Lignes reçues</div>
+                            <div class="dl-stat-value ${valClass}">${receivedStr}</div>
+                        </div>
+                    </div>
+                    <div class="dl-bar-wrap">
+                        <div class="dl-bar-fill ${barClass}" style="width:${(loaded && !isToday) ? pctBar : 0}%"></div>
+                    </div>
+                    <div class="dl-bar-label">${statusMsg}</div>
+                    <div class="dl-devices-note">
+                        3 devices actifs — environ <strong>4 320 lignes</strong> attendues par jour complet (±&nbsp;quelques lignes)
+                    </div>
+                </div>
+            `;
+        }
+
+        function getVisibleCount() {
+            return window.innerWidth <= 600 ? 1 : VISIBLE;
+        }
+
+        function renderSlider() {
+            const visible = getVisibleCount();
+            const track   = document.getElementById('dl-track');
+            track.innerHTML = allDays.map(d => buildCard(d)).join('');
+
+            const maxOffset = Math.max(0, allDays.length - visible);
+            if (offset > maxOffset) offset = maxOffset;
+
+            const cards = track.querySelectorAll('.dl-card');
+            let shift = 0;
+            if (cards.length > 0) {
+                const cardW = cards[0].getBoundingClientRect().width;
+                shift = offset * (cardW + 20);
+            }
+            track.style.transform = `translateX(-${shift}px)`;
+
+            document.getElementById('btn-prev').disabled = offset <= 0;
+            document.getElementById('btn-next').disabled = offset >= maxOffset;
+
+            const dotsRow = document.getElementById('dots-row');
+            dotsRow.innerHTML = '';
+            for (let i = 0; i <= maxOffset; i++) {
+                const btn = document.createElement('button');
+                btn.className = 'dot-btn' + (i === offset ? ' active' : '');
+                btn.setAttribute('aria-label', `Aller à la position ${i + 1}`);
+                btn.addEventListener('click', () => { offset = i; renderSlider(); });
+                dotsRow.appendChild(btn);
+            }
+        }
+
+        function slideDir(dir) {
+            const maxOffset = Math.max(0, allDays.length - getVisibleCount());
+            offset = Math.max(0, Math.min(maxOffset, offset + dir));
+            renderSlider();
+        }
+
+        async function getLinesForDay(dateStr, daysAgo) {
+            if (daysAgo === 0) return null;
+            const res = await fetch(
+                `${SUPABASE_URL}/rest/v1/measurements?device_id=eq.${dateStr}.csv&select=line_count&limit=1`,
+                { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
+            );
+            if (!res.ok) return null;
+            const data = await res.json();
+            if (!Array.isArray(data) || data.length === 0) return null;
+            return data[0].line_count ?? null;
+        }
+
+        async function loadData() {
+            document.getElementById('dl-track').innerHTML = '<div class="loading-msg">Chargement...</div>';
+            document.getElementById('dots-row').innerHTML = '';
+            allDays = [];
+
+            const days = [];
+            for (let i = 6; i >= 0; i--) {
+                days.push({ daysAgo: i, dateStr: getDateStr(i) });
+            }
+
+            const results = await Promise.allSettled(
+                days.map(d => getLinesForDay(d.dateStr, d.daysAgo))
+            );
+
+            allDays = days.map((d, idx) => {
+                const r         = results[idx];
+                const lineCount = (r.status === 'fulfilled' && r.value !== null) ? r.value : null;
+                return { ...d, lineCount: lineCount ?? 0, loaded: lineCount !== null };
+            });
+
+            offset = Math.max(0, allDays.length - getVisibleCount());
+            renderSlider();
+
+            document.getElementById('last-update').textContent =
+                'Mis à jour le ' + new Date().toLocaleString('fr-FR');
+        }
+
+        loadData();
+        window.addEventListener('resize', () => renderSlider());
+    </script>
+
+    <script>
+        function toggleMenu() {
+            const sidebar = document.getElementById("sidebar");
+            const main    = document.querySelector(".main-content");
+            const overlay = document.getElementById("overlay");
+            if (!sidebar || !main || !overlay) return;
+            if (window.innerWidth <= 720) {
+                sidebar.classList.toggle("active");
+                overlay.classList.toggle("active");
+            } else {
+                sidebar.classList.toggle("closed");
+                main.classList.toggle("full");
+            }
+        }
+        function closeMenu() {
+            const sidebar = document.getElementById("sidebar");
+            const overlay = document.getElementById("overlay");
+            if (!sidebar || !overlay) return;
+            sidebar.classList.remove("active");
+            overlay.classList.remove("active");
+        }
+        document.querySelectorAll(".sidebar-menu a").forEach(a => {
+            a.addEventListener("click", () => {
+                if (window.innerWidth <= 720) closeMenu();
+            });
+        });
+    </script>
+</body>
+</html>

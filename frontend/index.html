@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Centre IRM – Supervision</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css?v=final">
+    <style>
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 24px;
+        }
+
+        .status-card {
+            display: flex;
+            flex-direction: column;
+            min-height: 230px;
+            transition: transform 0.25s ease, box-shadow 0.25s ease;
+        }
+
+        .status-card:hover {
+            transform: translateY(-6px);
+            box-shadow: 0 18px 45px rgba(15,23,42,0.12);
+        }
+
+        .s-head {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        .s-title {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: var(--text);
+        }
+
+        .s-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 7px 13px;
+            border-radius: 999px;
+            font-size: 0.84rem;
+            font-weight: 700;
+            white-space: nowrap;
+            background: #f1f5f9;
+            color: var(--muted);
+        }
+
+        .s-pill .pdot {
+            width: 9px;
+            height: 9px;
+            border-radius: 50%;
+            background: #94a3b8;
+            flex: 0 0 auto;
+        }
+
+        .s-pill.is-online { background: #ecfdf5; color: #166534; }
+        .s-pill.is-online .pdot { background: var(--green); box-shadow: 0 0 0 4px rgba(34,197,94,0.18); }
+
+        .s-pill.is-late { background: #fff7ed; color: #9a3412; }
+        .s-pill.is-late .pdot { background: var(--orange); }
+
+        .s-pill.is-offline { background: #fef2f2; color: #991b1b; }
+        .s-pill.is-offline .pdot { background: var(--red); }
+
+        @media (prefers-reduced-motion: no-preference) {
+            .s-pill.is-online .pdot { animation: pulse 2s ease-in-out infinite; }
+        }
+
+        @keyframes pulse {
+            0%, 100% { box-shadow: 0 0 0 4px rgba(34,197,94,0.18); }
+            50% { box-shadow: 0 0 0 7px rgba(34,197,94,0.05); }
+        }
+
+        .s-desc {
+            margin-top: 10px;
+            color: var(--muted);
+            font-size: 0.98rem;
+            line-height: 1.45;
+        }
+
+        .s-body {
+            margin-top: auto;
+            padding-top: 22px;
+        }
+
+        .s-time-label {
+            color: var(--muted);
+            font-size: 0.86rem;
+            margin-bottom: 4px;
+        }
+
+        .s-time {
+            font-size: 1.5rem;
+            font-weight: 800;
+            color: var(--text);
+        }
+
+        .s-time-abs {
+            margin-top: 4px;
+            color: var(--muted);
+            font-size: 0.9rem;
+        }
+
+        .s-foot {
+            margin-top: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+        }
+
+        .s-id {
+            font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+            font-size: 0.82rem;
+            color: var(--muted);
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            padding: 4px 9px;
+            border-radius: 8px;
+        }
+
+        .s-link {
+            color: #166534;
+            background: #ecfdf5;
+            padding: 7px 12px;
+            border-radius: 999px;
+            font-size: 0.86rem;
+            font-weight: 700;
+        }
+
+        .refresh-note {
+            margin-top: 22px;
+            color: var(--muted);
+            font-size: 0.9rem;
+        }
+
+        @media (max-width: 1100px) {
+            .status-grid { grid-template-columns: 1fr; }
+        }
+
+        .alert-banner {
+            display: flex;
+            align-items: flex-start;
+            gap: 14px;
+            padding: 20px 24px;
+            margin-bottom: 24px;
+            border-left: 5px solid #94a3b8;
+            font-size: 1.02rem;
+        }
+
+        .alert-banner-icon {
+            font-size: 1.4rem;
+            line-height: 1.3;
+            flex: 0 0 auto;
+        }
+
+        .alert-banner-text {
+            flex: 1;
+            line-height: 1.5;
+        }
+
+        .alert-banner.is-loading {
+            border-left-color: #94a3b8;
+            background: var(--surface-2);
+            color: var(--muted);
+        }
+
+        .alert-banner.is-ok {
+            border-left-color: var(--green, #22c55e);
+            background: #ecfdf5;
+            color: #166534;
+            font-weight: 600;
+        }
+
+        .alert-banner.is-problem {
+            border-left-color: var(--red, #ef4444);
+            background: #fef2f2;
+            color: #991b1b;
+        }
+
+        .alert-list {
+            margin: 8px 0 0 0;
+            padding-left: 20px;
+            font-weight: 500;
+        }
+
+        .alert-list li {
+            margin-bottom: 6px;
+        }
+    </style>
+</head>
+<body>
+    <button class="menu-toggle" type="button" aria-label="Ouvrir le menu" onclick="toggleMenu()">☰</button>
+    <div id="overlay" onclick="closeMenu()"></div>
+    <div class="app-shell">
+        <aside id="sidebar" class="sidebar">
+            <div class="sidebar-brand"><span>IRM Supervision</span><img src="Logo_IRM.png" alt="Logo IRM"></div>
+            <div class="sidebar-section">
+                <div class="sidebar-title"><span>Monitoring</span><span>⌄</span></div>
+                <nav class="sidebar-menu">
+                    <a href="index.html" data-page="index"><span class="dot"></span><span class="label-text">Vue générale</span></a>
+                    <a href="atmosphere.html" data-page="atmosphere"><span class="dot"></span><span class="label-text">Atmosphère</span></a>
+                    <a href="eaufroide.html" data-page="eaufroide"><span class="dot"></span><span class="label-text">Eau glacée</span></a>
+                    <a href="compresseur.html" data-page="compresseur"><span class="dot"></span><span class="label-text">Compresseur</span></a>
+                    <a href="groupefroid.html" data-page="groupefroid"><span class="dot"></span><span class="label-text">Groupe froid</span></a>
+                     <a href="humidificateur.html" data-page="humidificateur"><span class="dot"></span><span class="label-text">Humidificateur</span></a>             
+                </nav>
+            </div>
+            <div class="sidebar-section">
+                <div class="sidebar-title"><span>Système</span><span>⌄</span></div>
+                <nav class="sidebar-menu">
+                    <a href="alerte.html" data-page="alerte">
+                    <span class="dot"></span>
+                    <span class="label-text">Alertes</span>
+                    </a>
+                    <a href="datalogging.html" data-page="datalogging"><span class="dot"></span><span class="label-text">Datalogging</span></a>
+                </nav>
+            </div>
+            <div class="sidebar-footer">Plateforme IRM – INT<br>Consultation distante</div>
+        </aside>
+        <main class="main-content">
+            <div class="topbar">
+                <div><h1 class="page-title">Supervision IRM</h1><div class="page-subtitle">État de communication des trois modules Arduino</div></div>
+                <div class="topbar-actions"><span class="badge-soft">Supabase REST</span><span class="badge-soft">Lecture seule</span></div>
+            </div>
+            <div class="container">
+                <div class="card alert-banner is-loading" id="alert_banner">
+                    <span class="alert-banner-icon">⏳</span>
+                    <span class="alert-banner-text">Vérification des seuils de surveillance…</span>
+                </div>
+                <div class="status-grid">
+
+                    <div class="card status-card" id="card_atmo">
+                        <div class="s-head">
+                            <div class="s-title">Atmosphère</div>
+                            <div class="s-pill" id="pill_atmo"><span class="pdot"></span><span class="ptext">…</span></div>
+                        </div>
+                        <div class="s-desc">Température, humidité et pression de la salle IRM</div>
+                        <div class="s-body">
+                            <div class="s-time-label">Dernière mesure reçue</div>
+                            <div class="s-time" id="rel_atmo">—</div>
+                            <div class="s-time-abs" id="abs_atmo"></div>
+                            <div class="s-foot">
+                                <span class="s-id">arduino_atmo</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card status-card" id="card_ntc">
+                        <div class="s-head">
+                            <div class="s-title">Eau glacée &amp; compresseur</div>
+                            <div class="s-pill" id="pill_ntc"><span class="pdot"></span><span class="ptext">…</span></div>
+                        </div>
+                        <div class="s-desc">Température du circuit, vibrations et état du compresseur</div>
+                        <div class="s-body">
+                            <div class="s-time-label">Dernière mesure reçue</div>
+                            <div class="s-time" id="rel_ntc">—</div>
+                            <div class="s-time-abs" id="abs_ntc"></div>
+                            <div class="s-foot">
+                                <span class="s-id">arduino_ntc_01</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card status-card" id="card_cta">
+                        <div class="s-head">
+                            <div class="s-title">Groupe froid (CTA)</div>
+                            <div class="s-pill" id="pill_cta"><span class="pdot"></span><span class="ptext">…</span></div>
+                        </div>
+                        <div class="s-desc">États des contacts secs CVC (humidificateur, groupes froids, défauts)</div>
+                        <div class="s-body">
+                            <div class="s-time-label">Dernière mesure reçue</div>
+                            <div class="s-time" id="rel_cta">—</div>
+                            <div class="s-time-abs" id="abs_cta"></div>
+                            <div class="s-foot">
+                                <span class="s-id">arduino_cta</span>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+                <div class="refresh-note" id="refresh_note">Actualisation automatique toutes les 30 secondes.</div>
+            </div>
+        </main>
+    </div>
+    <script>document.querySelector('[data-page="index"]').classList.add('active');</script>
+<script>
+const SUPABASE_URL = "https://xkqizqpflgcmyiqluuie.supabase.co";
+const SUPABASE_KEY = "sb_publishable_87i8-j5iiLISsoBSBvC7ng_RlE5TPrr";
+
+const MODULES = [
+    { id: "arduino_atmo",   key: "atmo" },
+    { id: "arduino_ntc_01", key: "ntc"  },
+    { id: "arduino_cta",    key: "cta"  }
+];
+
+const CONFIG_SEUILS_PATH = "config_seuils.json";
+let seuilsConfig = null;
+const latestByDevice = {};
+
+function formatLocalTime(utcString) {
+    const date = new Date(utcString);
+    const options = {
+        timeZone: "Europe/Paris",
+        year: "numeric", month: "2-digit", day: "2-digit",
+        hour: "2-digit", minute: "2-digit", hour12: false
+    };
+    const parts = new Intl.DateTimeFormat("fr-FR", options).formatToParts(date);
+    const get = t => parts.find(p => p.type === t).value;
+    return `${get("year")}-${get("month")}-${get("day")} à ${get("hour")}:${get("minute")}`;
+}
+
+function relativeTime(diffMinutes) {
+    if (diffMinutes < 1) return "à l'instant";
+    if (diffMinutes < 60) {
+        const m = Math.round(diffMinutes);
+        return `il y a ${m} min`;
+    }
+    const h = Math.floor(diffMinutes / 60);
+    const m = Math.round(diffMinutes % 60);
+    return m === 0 ? `il y a ${h} h` : `il y a ${h} h ${m} min`;
+}
+
+async function fetchLatest(device) {
+    const response = await fetch(
+        `${SUPABASE_URL}/rest/v1/measurements?device_id=eq.${device}&order=timestamp.desc&limit=1`,
+        {
+            headers: {
+                "apikey": SUPABASE_KEY,
+                "Authorization": `Bearer ${SUPABASE_KEY}`
+            }
+        }
+    );
+    const data = await response.json();
+    return data[0];
+}
+
+function setPill(key, cls, text) {
+    const pill = document.getElementById("pill_" + key);
+    pill.className = "s-pill " + cls;
+    pill.querySelector(".ptext").textContent = text;
+}
+
+async function refreshModule(mod) {
+    try {
+        const row = await fetchLatest(mod.id);
+        latestByDevice[mod.id] = row || null;
+
+        if (!row || !row.timestamp) {
+            setPill(mod.key, "is-offline", "Aucune donnée");
+            document.getElementById("rel_" + mod.key).textContent = "—";
+            document.getElementById("abs_" + mod.key).textContent = "";
+            return;
+        }
+
+        const diffMin = (Date.now() - new Date(row.timestamp)) / 1000 / 60;
+
+        if (diffMin <= 5) {
+            setPill(mod.key, "is-online", "En ligne");
+        } else if (diffMin <= 15) {
+            setPill(mod.key, "is-late", "Retard");
+        } else {
+            setPill(mod.key, "is-offline", "Hors ligne");
+        }
+
+        document.getElementById("rel_" + mod.key).textContent = relativeTime(diffMin);
+        document.getElementById("abs_" + mod.key).textContent = formatLocalTime(row.timestamp);
+    } catch (e) {
+        latestByDevice[mod.id] = null;
+        setPill(mod.key, "is-offline", "Erreur réseau");
+        document.getElementById("rel_" + mod.key).textContent = "—";
+        document.getElementById("abs_" + mod.key).textContent = "";
+    }
+}
+
+/* ===== SEUILS / BANDEAU D'ALERTE ===== */
+
+async function loadSeuilsConfig() {
+    try {
+        const res = await fetch(CONFIG_SEUILS_PATH + "?v=" + Date.now());
+        if (!res.ok) throw new Error("config_seuils.json introuvable");
+        seuilsConfig = await res.json();
+    } catch (e) {
+        console.error("Impossible de charger config_seuils.json :", e);
+        seuilsConfig = null;
+    }
+}
+
+function checkThresholds() {
+    const banner = document.getElementById("alert_banner");
+    if (!banner) return;
+
+    if (!seuilsConfig) {
+        banner.className = "card alert-banner is-loading";
+        banner.innerHTML = `<span class="alert-banner-icon">⏳</span><span class="alert-banner-text">Impossible de vérifier les seuils (config_seuils.json inaccessible).</span>`;
+        return;
+    }
+
+    const problems = [];
+
+    MODULES.forEach(mod => {
+        const cfg = seuilsConfig[mod.id];
+        const row = latestByDevice[mod.id];
+        if (!cfg || !row) return;
+
+        for (const champ in cfg) {
+            const rule = cfg[champ];
+            if (!rule || !rule.enabled) continue;
+
+            const raw = row[champ];
+            if (raw === null || raw === undefined) continue;
+
+            if (Array.isArray(rule.expected)) {
+                const value = Number(raw);
+                if (!rule.expected.includes(value)) {
+                    problems.push((rule.message_expected || `${rule.label} : état anormal.`) + " Une alerte est envoyée par mail, veuillez vérifier !");
+                }
+                continue;
+            }
+
+            const value = Number(raw);
+            if (isNaN(value)) continue;
+
+            if (rule.min !== undefined && value < rule.min) {
+                problems.push(`${rule.label} trop basse (${value}${rule.unit ? " " + rule.unit : ""}). Une alerte est envoyée par mail, veuillez vérifier !`);
+            } else if (rule.max !== undefined && value > rule.max) {
+                problems.push(`${rule.label} trop élevée (${value}${rule.unit ? " " + rule.unit : ""}). Une alerte est envoyée par mail, veuillez vérifier !`);
+            }
+        }
+    });
+
+    if (problems.length === 0) {
+        banner.className = "card alert-banner is-ok";
+        banner.innerHTML = `<span class="alert-banner-icon"></span><span class="alert-banner-text">Tout va bien Jean-Luc, le système ne présente aucune valeur hors des seuils.</span>`;
+    } else {
+        banner.className = "card alert-banner is-problem";
+        const items = problems.map(p => `<li>${p}</li>`).join("");
+        banner.innerHTML = `
+            <span class="alert-banner-icon">⚠️</span>
+            <span class="alert-banner-text">
+                ${problems.length} grandeur${problems.length > 1 ? "s" : ""} hors seuil :
+                <ul class="alert-list">${items}</ul>
+            </span>`;
+    }
+}
+
+async function refreshAll() {
+    await Promise.all(MODULES.map(refreshModule));
+    checkThresholds();
+    const now = new Date().toLocaleTimeString("fr-FR", { timeZone: "Europe/Paris", hour12: false });
+    document.getElementById("refresh_note").textContent =
+        `Actualisation automatique toutes les 30 secondes — dernière mise à jour à ${now}.`;
+}
+
+loadSeuilsConfig().then(() => {
+    refreshAll();
+    setInterval(refreshAll, 30000);
+});
+</script>
+<script>
+function toggleMenu() {
+    const sidebar = document.getElementById("sidebar");
+    const main = document.querySelector(".main-content");
+    const overlay = document.getElementById("overlay");
+    if (!sidebar || !main || !overlay) return;
+    if (window.innerWidth <= 720) {
+        sidebar.classList.toggle("active");
+        overlay.classList.toggle("active");
+    } else {
+        sidebar.classList.toggle("closed");
+        main.classList.toggle("full");
+    }
+}
+function closeMenu() {
+    const sidebar = document.getElementById("sidebar");
+    const overlay = document.getElementById("overlay");
+    if (!sidebar || !overlay) return;
+    sidebar.classList.remove("active");
+    overlay.classList.remove("active");
+}
+document.querySelectorAll(".sidebar-menu a").forEach(a => {
+    a.addEventListener("click", () => {
+        if (window.innerWidth <= 720) closeMenu();
+    });
+});
+</script>
+</body>
+</html>
